@@ -7,6 +7,12 @@
  * mod_rewrite, so we bypass it entirely and call the controller / API
  * directly.
  */
+// TEMP: surface fatal errors to the browser so we can diagnose 500s. Remove
+// once the plugin is stable.
+ini_set('display_errors', '1');
+ini_set('display_startup_errors', '1');
+error_reporting(E_ALL);
+
 // staff.inc.php uses CWD-relative `require('../main.inc.php')`, so we have to
 // pretend we're being served from /scp/ before pulling it in.
 chdir(__DIR__ . '/..');
