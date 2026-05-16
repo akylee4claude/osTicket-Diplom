@@ -61,7 +61,7 @@ services:
       ANALYTICS_SLA_MTTR_HOURS: ${ANALYTICS_SLA_MTTR_HOURS:-24}
       ANALYTICS_ANOMALY_Z: ${ANALYTICS_ANOMALY_Z:-2.0}
     volumes:
-      - ./analytics:/app
+      - ./analytics:/app/analytics
 
 volumes:
   db_data:

@@ -40,10 +40,17 @@ ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
 ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
     PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
 
-COPY worker/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+COPY worker/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-COPY worker /app/worker
+# Mirror the host layout: /app/analytics/{worker,tools,__init__.py}.
+# This matches `from analytics.worker import ...` imports used across the
+# codebase and keeps PYTHONPATH simple (/app).
+RUN mkdir -p /app/analytics && touch /app/analytics/__init__.py
+COPY worker /app/analytics/worker
+COPY tools  /app/analytics/tools
+
+ENV PYTHONPATH=/app
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["python", "-m", "worker.daemon"]
+CMD ["python", "-m", "analytics.worker.daemon"]
