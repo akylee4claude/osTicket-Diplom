@@ -32,7 +32,11 @@ class AnalyticsPlugin extends Plugin {
 
         Analytics\Schema::ensure();
 
-        Application::registerStaffApp(
+        // NB: Application::register*App() are declared without `static` in
+        // osTicket core (include/class.app.php). Calling them statically is a
+        // fatal error on PHP 8.x — go through an instance instead.
+        $apps = new Application();
+        $apps->registerStaffApp(
             __('Аналитика'),
             'apps/analytics/',
             ['title' => __('Аналитика и дашборды')]
