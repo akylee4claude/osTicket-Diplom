@@ -7,6 +7,9 @@
  * mod_rewrite, so we bypass it entirely and call the controller / API
  * directly.
  */
+// staff.inc.php uses CWD-relative `require('../main.inc.php')`, so we have to
+// pretend we're being served from /scp/ before pulling it in.
+chdir(__DIR__ . '/..');
 require_once(__DIR__ . '/../staff.inc.php');
 require_once INCLUDE_DIR.'plugins/analytics/lib/AnalyticsController.php';
 require_once INCLUDE_DIR.'plugins/analytics/lib/AnalyticsApi.php';
