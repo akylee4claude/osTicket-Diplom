@@ -19,7 +19,17 @@ require_once __DIR__ . '/lib/AnalyticsSchema.php';
 class AnalyticsPlugin extends Plugin {
     var $config_class = 'AnalyticsPluginConfig';
 
-    function bootstrap() {
+    /**
+     * init() runs for every installed plugin on each request (even before
+     * instances are bootstrapped). Single-instance plugins like this one
+     * register their global routes / menus here, gated on isActive() so the
+     * menu disappears when the plugin is disabled.
+     */
+    function init() {
+        if (!$this->isActive()) {
+            return;
+        }
+
         Analytics\Schema::ensure();
 
         Application::registerStaffApp(
