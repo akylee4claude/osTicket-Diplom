@@ -30,6 +30,8 @@
 .ost-analytics__chart, .ost-analytics__panel {
     background: #fff; border: 1px solid #e0e0e0; border-radius: 4px; padding: 12px 14px;
 }
+.ost-analytics__chart { position: relative; height: 280px; }
+.ost-analytics__chart canvas { max-height: 240px !important; }
 .ost-analytics__chart h4, .ost-analytics__panel h4 { margin: 0 0 10px; font-size: 14px; }
 .ost-analytics__anomalies .anomaly { padding: 6px 8px; border-left: 3px solid #c0392b;
     background: #fff5f3; margin-bottom: 6px; font-size: 12px; }
