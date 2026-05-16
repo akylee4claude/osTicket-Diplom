@@ -4,21 +4,38 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     TZ=Europe/Moscow
 
-# Switch apt to HTTPS — plain HTTP to deb.debian.org gets blocked by some
-# ISPs / corporate proxies / anti-virus HTTP inspectors. HTTPS on port 443
-# is virtually never filtered.
+# Default to Yandex mirror to work around ISPs that block deb.debian.org
+# (Fastly CDN). Override with `--build-arg DEBIAN_MIRROR=http://...` if
+# behind a corporate proxy or building from another region.
+ARG DEBIAN_MIRROR=http://mirror.yandex.ru
+
 RUN set -eux; \
     if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
-        sed -i 's|http://deb.debian.org|https://deb.debian.org|g; s|http://security.debian.org|https://security.debian.org|g' /etc/apt/sources.list.d/debian.sources; \
+        sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g; \
+                s|https://deb.debian.org|${DEBIAN_MIRROR}|g; \
+                s|http://security.debian.org|${DEBIAN_MIRROR}|g; \
+                s|https://security.debian.org|${DEBIAN_MIRROR}|g" \
+                /etc/apt/sources.list.d/debian.sources; \
     fi; \
     if [ -f /etc/apt/sources.list ]; then \
-        sed -i 's|http://deb.debian.org|https://deb.debian.org|g; s|http://security.debian.org|https://security.debian.org|g' /etc/apt/sources.list; \
+        sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g; \
+                s|https://deb.debian.org|${DEBIAN_MIRROR}|g; \
+                s|http://security.debian.org|${DEBIAN_MIRROR}|g; \
+                s|https://security.debian.org|${DEBIAN_MIRROR}|g" \
+                /etc/apt/sources.list; \
     fi; \
     apt-get update; \
     apt-get install -y --no-install-recommends default-mysql-client tini; \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# Use a Russian-friendly pip mirror too (Yandex). Override with
+# --build-arg PIP_INDEX_URL=... when building elsewhere.
+ARG PIP_INDEX_URL=https://mirror.yandex.ru/mirrors/pypi/simple/
+ARG PIP_TRUSTED_HOST=mirror.yandex.ru
+ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
+    PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
 
 COPY worker/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
