@@ -30,7 +30,7 @@ class Controller {
             'default_period_days' => $cfg ? (int)$cfg->get('default_period_days') : 30,
         ];
 
-        $apiBase = '/scp/apps/analytics/api';
+        $apiBase = (defined('ROOT_PATH') ? ROOT_PATH : '/') . 'scp/apps/analytics.php';
 
         if ($nav && method_exists($nav, 'setTabActive')) {
             $nav->setTabActive('apps');

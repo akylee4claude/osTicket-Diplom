@@ -2,16 +2,13 @@
 /**
  * Analytics & Dashboards plugin for osTicket 1.18.
  *
- * Registers a staff app under /scp/apps/analytics/ and exposes:
- *   - a dashboard page with Chart.js visualisations of KPIs
- *   - a JSON API used by the dashboard to fetch aggregated data
- *
- * KPI aggregation itself is performed by the external Python worker (see
- * analytics/worker/) which writes into the `analytics_daily_stats` table.
+ * Registers a staff app under /scp/apps/analytics.php. The dashboard UI and
+ * its JSON API are served by a direct entry point — see scp/apps/analytics.php
+ * — because osTicket's bundled apps dispatcher refuses requests when
+ * SCRIPT_NAME resolves to dispatcher.php after mod_rewrite (the typical
+ * setup on php:apache containers).
  */
-
 require_once INCLUDE_DIR . 'class.plugin.php';
-require_once INCLUDE_DIR . 'class.signal.php';
 require_once INCLUDE_DIR . 'class.app.php';
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/lib/AnalyticsSchema.php';
@@ -19,12 +16,6 @@ require_once __DIR__ . '/lib/AnalyticsSchema.php';
 class AnalyticsPlugin extends Plugin {
     var $config_class = 'AnalyticsPluginConfig';
 
-    /**
-     * init() runs for every installed plugin on each request (even before
-     * instances are bootstrapped). Single-instance plugins like this one
-     * register their global routes / menus here, gated on isActive() so the
-     * menu disappears when the plugin is disabled.
-     */
     function init() {
         if (!$this->isActive()) {
             return;
@@ -32,21 +23,15 @@ class AnalyticsPlugin extends Plugin {
 
         Analytics\Schema::ensure();
 
-        // NB: Application::register*App() are declared without `static` in
-        // osTicket core (include/class.app.php). Calling them statically is a
-        // fatal error on PHP 8.x — go through an instance instead.
+        // Application::register*App() in osTicket core is declared without
+        // `static`, so calling it statically is fatal on PHP 8.x. Go through
+        // a throwaway instance — the storage is a static property anyway.
         $apps = new Application();
         $apps->registerStaffApp(
             __('Аналитика'),
-            'apps/analytics/',
+            'apps/analytics.php',
             ['title' => __('Аналитика и дашборды')]
         );
-
-        Signal::connect('apps.scp', function ($dispatcher) {
-            $dispatcher->append(
-                url('^/analytics/', include __DIR__ . '/urls.php')
-            );
-        });
     }
 
     function isMultiInstance() {

@@ -144,12 +144,13 @@
     return params;
   }
 
-  async function fetchJson(path) {
-    const r = await fetch(`${apiBase}${path}?${currentParams().toString()}`, {
+  async function fetchJson(action) {
+    const url = `${apiBase}?action=${encodeURIComponent(action)}&${currentParams().toString()}`;
+    const r = await fetch(url, {
       credentials: 'same-origin',
       headers: {'Accept': 'application/json'},
     });
-    if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
+    if (!r.ok) throw new Error(`${action}: HTTP ${r.status}`);
     return r.json();
   }
 
@@ -277,14 +278,14 @@
   async function refresh() {
     try {
       const [dashboard, anomalies] = await Promise.all([
-        fetchJson('/dashboard'),
-        fetchJson('/anomalies'),
+        fetchJson('dashboard'),
+        fetchJson('anomalies'),
       ]);
       renderKpis(dashboard.summary, defaults.sla_frt_minutes, defaults.sla_mttr_hours);
       buildCharts(dashboard);
       renderAnomalies(anomalies);
       renderStatus(dashboard.last_worker_run);
-      exportLink.href = `${apiBase}/export.csv?${currentParams().toString()}`;
+      exportLink.href = `${apiBase}?action=export.csv&${currentParams().toString()}`;
     } catch (e) {
       console.error(e);
       kpisEl.innerHTML = `<div class="ost-analytics__kpi ost-analytics__kpi--bad">
