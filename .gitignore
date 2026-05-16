@@ -8,8 +8,13 @@
 .DS_Store
 Thumbs.db
 
-# osTicket user files (created at runtime)
-upload/include/ost-config.php
+# osTicket user files
+#   ost-config.php IS tracked (as a fresh template copy of ost-sampleconfig.php)
+#   so the installer doesn't error on fresh checkouts. After running the
+#   installer locally, do NOT commit your filled-in version — it contains
+#   DB credentials and SECRET_SALT. Use:
+#       git update-index --skip-worktree upload/include/ost-config.php
+#   to let git ignore your local modifications.
 upload/setup/ost-config.sample.php.bak
 
 # Python
