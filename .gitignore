@@ -1,0 +1,33 @@
+# Local environment
+.env
+.env.local
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# osTicket user files (created at runtime)
+upload/include/ost-config.php
+upload/setup/ost-config.sample.php.bak
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Docker volumes (when bind-mounted)
+docker/data/
+
+# Logs
+*.log
+docker/logs/
+
+# Build artifacts
+*.zip
+*.tar.gz
