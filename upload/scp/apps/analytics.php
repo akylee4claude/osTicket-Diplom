@@ -7,7 +7,7 @@
  * mod_rewrite, so we bypass it entirely and call the controller / API
  * directly.
  */
-require_once('staff.inc.php');
+require_once(__DIR__ . '/../staff.inc.php');
 require_once INCLUDE_DIR.'plugins/analytics/lib/AnalyticsController.php';
 require_once INCLUDE_DIR.'plugins/analytics/lib/AnalyticsApi.php';
 
