@@ -40,9 +40,11 @@ class Controller {
     }
 
     private static function findPlugin(): ?\Plugin {
+        // Plugin exposes its manifest as a public `$info` array (populated in
+        // Plugin::__onload). There is no getInfo() method on the base class —
+        // calling it crashes with "undefined method".
         foreach (\PluginManager::allActive() as $p) {
-            $info = $p->getInfo();
-            if (($info['id'] ?? null) === 'analytics:dashboards') {
+            if ((($p->info['id'] ?? null)) === 'analytics:dashboards') {
                 return $p;
             }
         }
