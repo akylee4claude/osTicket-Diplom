@@ -30,10 +30,13 @@ RUN set -eux; \
 
 WORKDIR /app
 
-# Use a Russian-friendly pip mirror too (Yandex). Override with
-# --build-arg PIP_INDEX_URL=... when building elsewhere.
-ARG PIP_INDEX_URL=https://mirror.yandex.ru/mirrors/pypi/simple/
-ARG PIP_TRUSTED_HOST=mirror.yandex.ru
+# PyPI mirror. Default to Tsinghua University mirror — it's a full PyPI
+# mirror updated hourly, hosted in China, accessible from Russian ISPs
+# (pypi.org itself rides Fastly CDN which is blocked by many RU ISPs).
+# Override with --build-arg PIP_INDEX_URL=https://pypi.org/simple/ for
+# users outside RU.
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
+ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
 ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
     PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
 
