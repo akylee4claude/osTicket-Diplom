@@ -3,47 +3,79 @@
 /** @var string $apiBase */
 ?>
 <style>
-.ost-analytics { margin-top: 8px; }
-.ost-analytics__title { display: flex; align-items: center; gap: 8px; }
+.ost-analytics { margin: 4px 0 24px; color: #222; }
+.ost-analytics__head { display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.ost-analytics__title { display: flex; align-items: center; gap: 10px;
+    margin: 0; font-size: 20px; font-weight: 600; color: #1f2933; }
+.ost-analytics__title i { color: #2c8aff; }
+.ost-analytics__back { font-size: 13px; color: #2c8aff; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 4px; }
+.ost-analytics__back:hover { text-decoration: underline; }
+
 .ost-analytics__filters {
-    display: flex; flex-wrap: wrap; align-items: end; gap: 12px;
-    background: #f8f8f8; border: 1px solid #ddd; padding: 12px;
-    border-radius: 4px; margin-bottom: 16px;
+    display: flex; flex-wrap: wrap; align-items: end; gap: 14px;
+    background: linear-gradient(180deg,#fafbfc,#f3f5f7);
+    border: 1px solid #e2e6ea; padding: 14px 16px;
+    border-radius: 6px; margin-bottom: 18px;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.02);
 }
-.ost-analytics__filters label { display: flex; flex-direction: column; font-size: 12px; color: #555; }
-.ost-analytics__filters select, .ost-analytics__filters input { padding: 4px 6px; }
-.ost-analytics__kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-    gap: 12px; margin-bottom: 18px; }
-.ost-analytics__kpi { background: #fff; border: 1px solid #e0e0e0; border-radius: 4px;
-    padding: 12px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+.ost-analytics__filters label { display: flex; flex-direction: column;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #6b7480; gap: 4px; }
+.ost-analytics__filters select, .ost-analytics__filters input {
+    padding: 6px 8px; border: 1px solid #ccd2d8; border-radius: 4px;
+    background: #fff; font-size: 13px; color: #222; min-width: 120px;
+}
+.ost-analytics__filters .action-button { margin: 0; }
+
+.ost-analytics__kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px; margin-bottom: 20px; }
+.ost-analytics__kpi { background: #fff; border: 1px solid #e2e6ea; border-radius: 6px;
+    padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    transition: transform .12s ease, box-shadow .12s ease; }
+.ost-analytics__kpi:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,0.06); }
 .ost-analytics__kpi--accent { border-left: 4px solid #2c8aff; }
 .ost-analytics__kpi--warn   { border-left: 4px solid #e67e22; }
 .ost-analytics__kpi--bad    { border-left: 4px solid #c0392b; }
 .ost-analytics__kpi--ok     { border-left: 4px solid #27ae60; }
-.ost-analytics__kpi-label { font-size: 11px; text-transform: uppercase; color: #888;
-    letter-spacing: 0.04em; }
-.ost-analytics__kpi-value { font-size: 22px; font-weight: 600; margin-top: 4px; color: #222; }
-.ost-analytics__kpi-sub   { font-size: 11px; color: #888; margin-top: 2px; }
+.ost-analytics__kpi-label { font-size: 10px; text-transform: uppercase; color: #8a93a0;
+    letter-spacing: 0.06em; font-weight: 600; }
+.ost-analytics__kpi-value { font-size: 24px; font-weight: 600; margin-top: 6px; color: #1f2933;
+    line-height: 1.1; }
+.ost-analytics__kpi-sub   { font-size: 11px; color: #8a93a0; margin-top: 4px; }
+
 .ost-analytics__row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
     margin-bottom: 16px; }
 @media (max-width: 900px) { .ost-analytics__row { grid-template-columns: 1fr; } }
 .ost-analytics__chart, .ost-analytics__panel {
-    background: #fff; border: 1px solid #e0e0e0; border-radius: 4px; padding: 12px 14px;
+    background: #fff; border: 1px solid #e2e6ea; border-radius: 6px; padding: 14px 16px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
 }
-.ost-analytics__chart { position: relative; height: 280px; }
-.ost-analytics__chart canvas { max-height: 240px !important; }
-.ost-analytics__chart h4, .ost-analytics__panel h4 { margin: 0 0 10px; font-size: 14px; }
-.ost-analytics__anomalies .anomaly { padding: 6px 8px; border-left: 3px solid #c0392b;
-    background: #fff5f3; margin-bottom: 6px; font-size: 12px; }
+.ost-analytics__chart { position: relative; height: 300px; }
+.ost-analytics__chart canvas { max-height: 250px !important; }
+.ost-analytics__chart h4, .ost-analytics__panel h4 {
+    margin: 0 0 12px; font-size: 13px; font-weight: 600; color: #4a5260;
+    text-transform: uppercase; letter-spacing: 0.04em;
+}
+.ost-analytics__panel { min-height: 110px; }
+.ost-analytics__anomalies .anomaly { padding: 8px 10px; border-left: 3px solid #c0392b;
+    background: #fff5f3; margin-bottom: 6px; font-size: 12.5px; border-radius: 0 4px 4px 0; }
 .ost-analytics__anomalies .anomaly--warn { border-left-color: #e67e22; background: #fff8ee; }
-.ost-analytics__status code { background: #f3f3f3; padding: 0 4px; border-radius: 2px; }
-.muted { color: #888; font-size: 12px; }
+.ost-analytics__status code { background: #eef2f7; padding: 1px 6px; border-radius: 3px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #1f2933; }
+.ost-analytics .muted { color: #8a93a0; font-size: 12.5px; }
 </style>
 
-<h2 class="ost-analytics__title">
-    <i class="icon-bar-chart"></i>
-    <?= __('Аналитика и дашборды') ?>
-</h2>
+<div class="ost-analytics__head">
+    <h2 class="ost-analytics__title">
+        <i class="icon-bar-chart"></i>
+        <?= __('Аналитика и дашборды') ?>
+    </h2>
+    <a class="ost-analytics__back" href="<?= ROOT_PATH ?>scp/index.php">
+        <i class="icon-chevron-left"></i> <?= __('Назад к панели') ?>
+    </a>
+</div>
 
 <div class="ost-analytics" data-api="<?= htmlspecialchars($apiBase) ?>"
                             data-defaults='<?= htmlspecialchars(json_encode($defaults), ENT_QUOTES) ?>'>

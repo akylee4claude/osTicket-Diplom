@@ -15,28 +15,33 @@ class Controller {
     }
 
     public function dashboard() {
-        global $thisstaff, $nav;
+        global $thisstaff, $nav, $ost, $cfg, $errors, $msg, $warn, $sysnotice;
         if (!$this->access()) {
             \Http::response(403, __('Access denied'));
             return;
         }
 
         $plugin = self::findPlugin();
-        $cfg = $plugin ? $plugin->getConfig() : null;
+        $pluginCfg = $plugin ? $plugin->getConfig() : null;
         $defaults = [
-            'sla_frt_minutes' => $cfg ? (int)$cfg->get('sla_frt_minutes') : 60,
-            'sla_mttr_hours' => $cfg ? (int)$cfg->get('sla_mttr_hours') : 24,
-            'anomaly_z' => $cfg ? (float)$cfg->get('anomaly_z') : 2.0,
-            'default_period_days' => $cfg ? (int)$cfg->get('default_period_days') : 30,
+            'sla_frt_minutes' => $pluginCfg ? (int)$pluginCfg->get('sla_frt_minutes') : 60,
+            'sla_mttr_hours' => $pluginCfg ? (int)$pluginCfg->get('sla_mttr_hours') : 24,
+            'anomaly_z' => $pluginCfg ? (float)$pluginCfg->get('anomaly_z') : 2.0,
+            'default_period_days' => $pluginCfg ? (int)$pluginCfg->get('default_period_days') : 30,
         ];
 
         $apiBase = (defined('ROOT_PATH') ? ROOT_PATH : '/') . 'scp/apps/analytics.php';
 
-        if ($nav && method_exists($nav, 'setTabActive')) {
+        if ($nav) {
             $nav->setTabActive('apps');
         }
+        if ($ost) {
+            $ost->setPageTitle(__('Аналитика и дашборды'));
+        }
 
+        require_once STAFFINC_DIR . 'header.inc.php';
         include __DIR__ . '/../templates/dashboard.tmpl.php';
+        require_once STAFFINC_DIR . 'footer.inc.php';
     }
 
     private static function findPlugin(): ?\Plugin {
