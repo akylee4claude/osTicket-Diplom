@@ -142,18 +142,21 @@
 </div>
 
 <script>
-// PJAX strips external <script src> tags from incoming partials, so on
-// pjax navigation Chart.js may not be loaded yet when our IIFE runs.
-// Load it on-demand and only start once the global `Chart` is available.
+// Chart.js is shipped with the plugin (see scp/js/vendor/chart.umd.js) so we
+// don't depend on any CDN — the original deployment is on a closed network
+// where jsdelivr / unpkg / cdnjs aren't reachable. PJAX also strips external
+// <script src> tags from partials, so we inject the tag here and start the
+// dashboard from its onload callback.
 (function ensureChart(cb) {
   if (typeof window.Chart !== 'undefined') { cb(); return; }
   const existing = document.querySelector('script[data-ost-analytics-chartjs]');
   if (existing) {
+    if (typeof window.Chart !== 'undefined') { cb(); return; }
     existing.addEventListener('load', cb, {once: true});
     return;
   }
   const s = document.createElement('script');
-  s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';
+  s.src = <?= json_encode(ROOT_PATH . 'scp/js/vendor/chart.umd.js?v=4.4.4') ?>;
   s.dataset.ostAnalyticsChartjs = '1';
   s.onload = cb;
   s.onerror = () => {
@@ -161,7 +164,8 @@
     if (el) el.innerHTML = '<div class="ost-analytics__kpi ost-analytics__kpi--bad">'
         + '<div class="ost-analytics__kpi-label">Ошибка</div>'
         + '<div class="ost-analytics__kpi-value">—</div>'
-        + '<div class="ost-analytics__kpi-sub">Не удалось загрузить Chart.js (CDN недоступен)</div></div>';
+        + '<div class="ost-analytics__kpi-sub">Не удалось загрузить '
+        + s.src + '. Проверьте наличие файла.</div></div>';
   };
   document.head.appendChild(s);
 })(() => {

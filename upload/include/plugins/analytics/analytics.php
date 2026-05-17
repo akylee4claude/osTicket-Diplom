@@ -30,7 +30,14 @@ class AnalyticsPlugin extends Plugin {
         $apps->registerStaffApp(
             __('Аналитика'),
             'apps/analytics.php',
-            ['title' => __('Аналитика и дашборды')]
+            [
+                'title' => __('Аналитика и дашборды'),
+                // The dashboard owns the full content area, dynamically loads
+                // Chart.js, and isn't a fit for pjax (which strips external
+                // scripts and serves stale partial responses on back-nav).
+                // Force a full page load on every click.
+                'iconclass' => 'no-pjax',
+            ]
         );
     }
 
