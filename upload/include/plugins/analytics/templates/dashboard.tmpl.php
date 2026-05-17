@@ -204,7 +204,7 @@
                 <option value="tickets"><?= __('Сырые тикеты') ?></option>
             </select>
         </label>
-        <a class="action-button" id="ost-analytics-export" href="#"><?= __('Скачать') ?></a>
+        <a class="action-button no-pjax" id="ost-analytics-export" href="#" download><?= __('Скачать') ?></a>
     </form>
     <div class="ost-analytics__compare-hint" id="ost-analytics-compare-hint" style="display:none"></div>
 
