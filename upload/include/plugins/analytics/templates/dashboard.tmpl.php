@@ -308,11 +308,14 @@
     charts[id] = new Chart(ctx, cfg);
   }
 
-  // Тултип для линейных графиков в режиме сравнения: помимо подписи
-  // оси X (= даты периода A) показывает абсолютную дату того же индекса
-  // для периода B.
+  // Тултип для линейных графиков в режиме сравнения. mode:'index' собирает
+  // в одном попапе все серии (и A, и Б) по дню оси X, чтобы значения
+  // периодов сразу сравнивались бок о бок. afterTitle добавляет
+  // абсолютную дату периода Б, соответствующую этому индексу.
   function compareTooltip(seriesB) {
     return {
+      mode: 'index',
+      intersect: false,
       callbacks: {
         afterTitle: (items) => {
           if (!seriesB) return '';
@@ -321,6 +324,22 @@
           return b ? `период Б: ${b.date}` : '';
         },
       },
+    };
+  }
+
+  // Стиль для серий периода Б: тонкая длинная штриховка, уменьшенная
+  // толщина, мелкие точки и пониженная непрозрачность — чтобы при наложении
+  // на основной график период Б воспринимался как фоновый «слой памяти».
+  function bStyle(color, axisId) {
+    return {
+      borderColor: color + '70',
+      borderDash: [8, 4],
+      borderWidth: 2,
+      pointRadius: 1.5,
+      pointHoverRadius: 4,
+      tension: 0.25,
+      fill: false,
+      yAxisID: axisId,
     };
   }
 
@@ -336,20 +355,18 @@
       : null;
 
     const ticketsDatasets = [
-      {label: 'Всего', data: seriesA.map(p => p.total_tickets),
+      {label: 'Всего (период А)', data: seriesA.map(p => p.total_tickets),
        borderColor: colors.primary, backgroundColor: colors.primary + '22',
-       fill: !compareData, tension: 0.25},
-      {label: 'Закрыто', data: seriesA.map(p => p.closed_tickets),
-       borderColor: colors.good, tension: 0.25},
-      {label: 'Просрочено', data: seriesA.map(p => p.overdue_tickets),
-       borderColor: colors.bad, tension: 0.25, borderDash: [4,4]},
+       borderWidth: 3, fill: !compareData, tension: 0.25},
+      {label: 'Закрыто (А)', data: seriesA.map(p => p.closed_tickets),
+       borderColor: colors.good, borderWidth: 3, tension: 0.25},
+      {label: 'Просрочено (А)', data: seriesA.map(p => p.overdue_tickets),
+       borderColor: colors.bad, borderWidth: 3, tension: 0.25, borderDash: [4,4]},
     ];
     if (seriesB) {
       ticketsDatasets.push(
-        {label: 'Всего (Б)', data: alignB('total_tickets'),
-         borderColor: colors.primary + '80', borderDash: [6,4], tension: 0.25, fill: false, pointRadius: 2},
-        {label: 'Закрыто (Б)', data: alignB('closed_tickets'),
-         borderColor: colors.good + '80', borderDash: [6,4], tension: 0.25, pointRadius: 2},
+        Object.assign({label: 'Всего (Б)', data: alignB('total_tickets')}, bStyle(colors.primary)),
+        Object.assign({label: 'Закрыто (Б)', data: alignB('closed_tickets')}, bStyle(colors.good)),
       );
     }
 
@@ -358,8 +375,9 @@
       data: { labels, datasets: ticketsDatasets },
       options: {
         responsive: true, maintainAspectRatio: false,
+        interaction: seriesB ? {mode: 'index', intersect: false} : {},
         plugins: {
-          legend: {position: 'bottom'},
+          legend: {position: 'bottom', labels: {boxWidth: 22}},
           tooltip: seriesB ? compareTooltip(seriesB) : {},
         },
       },
@@ -392,17 +410,15 @@
     });
 
     const timesDatasets = [
-      {label: 'FRT, мин', data: seriesA.map(p => p.avg_frt_minutes),
-       borderColor: colors.warn, yAxisID: 'y', tension: 0.25},
-      {label: 'MTTR, ч', data: seriesA.map(p => p.avg_mttr_hours),
-       borderColor: colors.bad, yAxisID: 'y1', tension: 0.25},
+      {label: 'FRT (А), мин', data: seriesA.map(p => p.avg_frt_minutes),
+       borderColor: colors.warn, borderWidth: 3, yAxisID: 'y', tension: 0.25},
+      {label: 'MTTR (А), ч', data: seriesA.map(p => p.avg_mttr_hours),
+       borderColor: colors.bad, borderWidth: 3, yAxisID: 'y1', tension: 0.25},
     ];
     if (seriesB) {
       timesDatasets.push(
-        {label: 'FRT (Б), мин', data: alignB('avg_frt_minutes'),
-         borderColor: colors.warn + '80', borderDash: [6,4], yAxisID: 'y', tension: 0.25, pointRadius: 2},
-        {label: 'MTTR (Б), ч', data: alignB('avg_mttr_hours'),
-         borderColor: colors.bad + '80', borderDash: [6,4], yAxisID: 'y1', tension: 0.25, pointRadius: 2},
+        Object.assign({label: 'FRT (Б), мин', data: alignB('avg_frt_minutes')}, bStyle(colors.warn, 'y')),
+        Object.assign({label: 'MTTR (Б), ч', data: alignB('avg_mttr_hours')}, bStyle(colors.bad, 'y1')),
       );
     }
 
@@ -411,8 +427,9 @@
       data: { labels, datasets: timesDatasets },
       options: {
         responsive: true, maintainAspectRatio: false,
+        interaction: seriesB ? {mode: 'index', intersect: false} : {},
         plugins: {
-          legend: {position: 'bottom'},
+          legend: {position: 'bottom', labels: {boxWidth: 22}},
           tooltip: seriesB ? compareTooltip(seriesB) : {},
         },
         scales: {
