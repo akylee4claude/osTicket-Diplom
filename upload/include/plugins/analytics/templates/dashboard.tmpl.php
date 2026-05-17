@@ -24,9 +24,11 @@
     font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
     color: #6b7480; gap: 4px; }
 .ost-analytics__filters select, .ost-analytics__filters input {
-    padding: 6px 8px; border: 1px solid #ccd2d8; border-radius: 4px;
-    background: #fff; font-size: 13px; color: #222; min-width: 120px;
+    padding: 6px 10px; border: 1px solid #ccd2d8; border-radius: 4px;
+    background: #fff; font-size: 13px; color: #222;
+    min-width: 160px; height: 32px; box-sizing: border-box;
 }
+.ost-analytics__filters select { padding-right: 24px; }
 .ost-analytics__filters .action-button { margin: 0; }
 
 .ost-analytics__kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
