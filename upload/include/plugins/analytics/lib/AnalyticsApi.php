@@ -25,7 +25,7 @@ class Api {
         if (!$this->access()) return $this->json(['error' => 'forbidden'], 403);
 
         [$from, $to] = $this->resolvePeriod();
-        $rows = Repository::dailyRange($from, $to);
+        $rows = $this->rowsFor($from, $to);
         $summary = Repository::summarise($rows);
         $lastRun = Repository::lastWorkerRun();
 
@@ -34,10 +34,57 @@ class Api {
                 'from' => $from->format('Y-m-d'),
                 'to' => $to->format('Y-m-d'),
             ],
+            'filter' => $this->activeFilter(),
             'series' => self::seriesShape($rows),
             'summary' => $summary,
             'last_worker_run' => $lastRun,
         ]);
+    }
+
+    /**
+     * Возвращает суточные строки KPI с учётом фильтров staff_id/dept_id.
+     * Когда фильтр отсутствует — берём готовые агрегаты из БД (быстрее).
+     * Когда фильтр есть — пересчитываем на лету по `ost_ticket`.
+     */
+    private function rowsFor(\DateTimeInterface $from, \DateTimeInterface $to): array {
+        $staffId = isset($_GET['staff_id']) ? (int) $_GET['staff_id'] : 0;
+        $deptId  = isset($_GET['dept_id'])  ? (int) $_GET['dept_id']  : 0;
+        if ($staffId > 0 || $deptId > 0) {
+            [$slaFrt, $slaMttr] = $this->slaThresholds();
+            return Repository::computeFiltered($from, $to, $staffId ?: null, $deptId ?: null,
+                                               $slaFrt, $slaMttr);
+        }
+        return Repository::dailyRange($from, $to);
+    }
+
+    private function activeFilter(): array {
+        return [
+            'staff_id' => isset($_GET['staff_id']) ? (int) $_GET['staff_id'] : 0,
+            'dept_id'  => isset($_GET['dept_id'])  ? (int) $_GET['dept_id']  : 0,
+        ];
+    }
+
+    /**
+     * Пороги SLA из конфига плагина или из дефолтов. Используются при
+     * пересчёте на лету (фильтрованный путь).
+     */
+    private function slaThresholds(): array {
+        $frt = 60; $mttr = 24;
+        try {
+            foreach (\PluginManager::allActive() as $p) {
+                if (($p->info['id'] ?? null) === 'analytics:dashboards') {
+                    $cfg = $p->getConfig();
+                    if ($cfg) {
+                        $frt = (int) ($cfg->get('sla_frt_minutes') ?: $frt);
+                        $mttr = (int) ($cfg->get('sla_mttr_hours') ?: $mttr);
+                    }
+                    break;
+                }
+            }
+        } catch (\Throwable $e) {
+            // Если плагин-менеджер недоступен — едем на дефолтах.
+        }
+        return [$frt, $mttr];
     }
 
     /**
@@ -51,8 +98,8 @@ class Api {
         [$fromA, $toA] = $this->resolvePeriod();
         [$fromB, $toB] = $this->resolvePeriodB($fromA, $toA);
 
-        $rowsA = Repository::dailyRange($fromA, $toA);
-        $rowsB = Repository::dailyRange($fromB, $toB);
+        $rowsA = $this->rowsFor($fromA, $toA);
+        $rowsB = $this->rowsFor($fromB, $toB);
         $sumA = Repository::summarise($rowsA);
         $sumB = Repository::summarise($rowsB);
 
@@ -130,12 +177,52 @@ class Api {
 
         if ($kind === 'agg') {
             fputcsv($out, self::aggHeader());
-            foreach (self::aggRows($from, $to) as $row) fputcsv($out, $row);
+            foreach ($this->aggRowsFor($from, $to) as $row) fputcsv($out, $row);
         } else {
             fputcsv($out, self::ticketsHeader());
-            foreach (self::ticketsRows($from, $to) as $row) fputcsv($out, $row);
+            foreach ($this->ticketsRowsFor($from, $to) as $row) fputcsv($out, $row);
         }
         fclose($out);
+    }
+
+    private function aggRowsFor(\DateTimeInterface $from, \DateTimeInterface $to): \Generator {
+        foreach ($this->rowsFor($from, $to) as $r) {
+            yield [
+                $r['bucket_date'],
+                (int) $r['total_tickets'],
+                (int) $r['opened_tickets'],
+                (int) $r['closed_tickets'],
+                (int) $r['overdue_tickets'],
+                $r['avg_frt_minutes'],
+                $r['avg_mttr_hours'],
+                $r['sla_frt_percent'],
+                $r['sla_mttr_percent'],
+            ];
+        }
+    }
+
+    private function ticketsRowsFor(\DateTimeInterface $from, \DateTimeInterface $to): \Generator {
+        $f = $this->activeFilter();
+        $sid = $f['staff_id'] ?: null;
+        $did = $f['dept_id']  ?: null;
+        $cur = $from instanceof \DateTimeImmutable ? $from : \DateTimeImmutable::createFromInterface($from);
+        $stop = $to instanceof \DateTimeImmutable ? $to : \DateTimeImmutable::createFromInterface($to);
+        while ($cur <= $stop) {
+            foreach (Repository::ticketsForDay($cur->format('Y-m-d'), 1000, $sid, $did) as $t) {
+                yield [
+                    $t['number'],
+                    $t['created'],
+                    $t['closed'] ?: '',
+                    $t['status_name'],
+                    $t['staff_name'],
+                    $t['dept_name'],
+                    $t['frt_minutes'],
+                    $t['isoverdue'] ? 'Да' : 'Нет',
+                    $t['isanswered'] ? 'Нет' : 'Да',
+                ];
+            }
+            $cur = $cur->modify('+1 day');
+        }
     }
 
     public function exportXlsx() {
@@ -146,11 +233,11 @@ class Api {
         $rows = [];
         if ($kind === 'agg') {
             $rows[] = self::aggHeader();
-            foreach (self::aggRows($from, $to) as $r) $rows[] = $r;
+            foreach ($this->aggRowsFor($from, $to) as $r) $rows[] = $r;
             $sheet = 'Агрегаты';
         } else {
             $rows[] = self::ticketsHeader();
-            foreach (self::ticketsRows($from, $to) as $r) $rows[] = $r;
+            foreach ($this->ticketsRowsFor($from, $to) as $r) $rows[] = $r;
             $sheet = 'Тикеты';
         }
 
@@ -173,10 +260,10 @@ class Api {
         require_once INCLUDE_DIR . 'class.pdf.php';
 
         [$from, $to] = $this->resolvePeriod();
-        $rows = Repository::dailyRange($from, $to);
+        $rows = $this->rowsFor($from, $to);
         $summary = Repository::summarise($rows);
 
-        $html = self::pdfHtml($from, $to, $rows, $summary);
+        $html = self::pdfHtml($from, $to, $rows, $summary, $this->activeFilter());
 
         $pdf = new \mPDFWithLocalImages([
             'mode' => 'utf-8', 'format' => 'A4',
@@ -203,49 +290,9 @@ class Api {
                 'SLA по FRT (%)', 'SLA по MTTR (%)'];
     }
 
-    private static function aggRows(\DateTimeInterface $from, \DateTimeInterface $to): \Generator {
-        foreach (Repository::dailyRange($from, $to) as $r) {
-            yield [
-                $r['bucket_date'],
-                (int) $r['total_tickets'],
-                (int) $r['opened_tickets'],
-                (int) $r['closed_tickets'],
-                (int) $r['overdue_tickets'],
-                $r['avg_frt_minutes'],
-                $r['avg_mttr_hours'],
-                $r['sla_frt_percent'],
-                $r['sla_mttr_percent'],
-            ];
-        }
-    }
-
     private static function ticketsHeader(): array {
         return ['№', 'Создан', 'Закрыт', 'Статус', 'Сотрудник', 'Отдел',
                 'FRT (мин)', 'Просрочена', 'Без ответа'];
-    }
-
-    private static function ticketsRows(\DateTimeInterface $from, \DateTimeInterface $to): \Generator {
-        // Идём по суткам, в день — до 1000 тикетов, чтобы выгрузка крупного
-        // периода не выела память. ticketsForDay уже сортирует
-        // «просроченные → без ответа → новые».
-        $cur = $from instanceof \DateTimeImmutable ? $from : \DateTimeImmutable::createFromInterface($from);
-        $stop = $to instanceof \DateTimeImmutable ? $to : \DateTimeImmutable::createFromInterface($to);
-        while ($cur <= $stop) {
-            foreach (Repository::ticketsForDay($cur->format('Y-m-d'), 1000) as $t) {
-                yield [
-                    $t['number'],
-                    $t['created'],
-                    $t['closed'] ?: '',
-                    $t['status_name'],
-                    $t['staff_name'],
-                    $t['dept_name'],
-                    $t['frt_minutes'],
-                    $t['isoverdue'] ? 'Да' : 'Нет',
-                    $t['isanswered'] ? 'Нет' : 'Да',
-                ];
-            }
-            $cur = $cur->modify('+1 day');
-        }
     }
 
     private static function filename(string $kind, \DateTimeInterface $from,
@@ -256,7 +303,7 @@ class Api {
     }
 
     private static function pdfHtml(\DateTimeInterface $from, \DateTimeInterface $to,
-                                    array $rows, array $summary): string {
+                                    array $rows, array $summary, array $filter = []): string {
         $esc = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $fmtNum = fn($v, $suffix = '') => $v === null ? '—' : (number_format((float) $v, 1, ',', ' ') . $suffix);
         $fmtInt = fn($v) => $v === null ? '—' : number_format((int) $v, 0, ',', ' ');
@@ -307,6 +354,22 @@ class Api {
         };
 
         $generatedAt = (new \DateTimeImmutable('now'))->format('Y-m-d H:i');
+        $filterLine = '';
+        if (!empty($filter['staff_id']) || !empty($filter['dept_id'])) {
+            $parts = [];
+            if (!empty($filter['staff_id'])) {
+                $row = \db_fetch_row(\db_query(
+                    "SELECT COALESCE(NULLIF(TRIM(CONCAT(firstname,' ',lastname)),''), username)
+                     FROM `" . TABLE_PREFIX . "staff` WHERE staff_id = " . (int) $filter['staff_id']));
+                $parts[] = 'Сотрудник: <b>' . $esc($row[0] ?? '#' . $filter['staff_id']) . '</b>';
+            }
+            if (!empty($filter['dept_id'])) {
+                $row = \db_fetch_row(\db_query(
+                    "SELECT name FROM `" . TABLE_PREFIX . "department` WHERE id = " . (int) $filter['dept_id']));
+                $parts[] = 'Отдел: <b>' . $esc($row[0] ?? '#' . $filter['dept_id']) . '</b>';
+            }
+            $filterLine = '<div class="meta">Фильтр: ' . implode(' · ', $parts) . '.</div>';
+        }
 
         return '<style>
             body { font-family: dejavusans, sans-serif; color: #222; font-size: 10pt; }
@@ -325,7 +388,7 @@ class Api {
         </style>
         <h1>Отчёт по аналитике</h1>
         <div class="meta">Период: <b>' . $esc($from->format('Y-m-d')) . '</b> — <b>' . $esc($to->format('Y-m-d')) . '</b>.
-            Сформирован: ' . $esc($generatedAt) . '.</div>
+            Сформирован: ' . $esc($generatedAt) . '.</div>' . $filterLine . '
         <h2>Сводные показатели за период</h2>' . $kpi . '
         <h2>Суточные агрегаты</h2>' . $tbl . '
         <h2>Распределения</h2>' .

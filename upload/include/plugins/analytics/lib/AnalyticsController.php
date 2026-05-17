@@ -32,6 +32,8 @@ class Controller {
 
         $apiBase = (defined('ROOT_PATH') ? ROOT_PATH : '/') . 'scp/apps/analytics.php';
         $isAdmin = $thisstaff && method_exists($thisstaff, 'isAdmin') && $thisstaff->isAdmin();
+        $staffList = Repository::allStaff();
+        $deptList  = Repository::allDepartments();
 
         if ($nav) {
             $nav->setTabActive('apps');

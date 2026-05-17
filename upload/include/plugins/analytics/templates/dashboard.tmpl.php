@@ -1,6 +1,9 @@
 <?php
-/** @var array $defaults */
-/** @var string $apiBase */
+/** @var array  $defaults  */
+/** @var string $apiBase   */
+/** @var bool   $isAdmin   */
+/** @var array  $staffList */
+/** @var array  $deptList  */
 ?>
 <style>
 .ost-analytics { margin: 4px 0 24px; color: #222; }
@@ -201,6 +204,24 @@
             <input type="date" name="to">
         </label>
         <label>
+            <?= __('Сотрудник') ?>
+            <select name="staff_id" id="ost-analytics-staff">
+                <option value="0"><?= __('Все') ?></option>
+                <?php foreach (($staffList ?? []) as $st): ?>
+                    <option value="<?= (int) $st['id'] ?>"><?= htmlspecialchars($st['name'], ENT_QUOTES, 'UTF-8') ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <label>
+            <?= __('Отдел') ?>
+            <select name="dept_id" id="ost-analytics-dept">
+                <option value="0"><?= __('Все') ?></option>
+                <?php foreach (($deptList ?? []) as $dt): ?>
+                    <option value="<?= (int) $dt['id'] ?>"><?= htmlspecialchars($dt['name'], ENT_QUOTES, 'UTF-8') ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <label>
             <?= __('Сравнить с') ?>
             <select name="compare" id="ost-analytics-compare">
                 <option value="" selected>— нет —</option>
@@ -399,6 +420,12 @@
     const from = fd.get('from'), to = fd.get('to'), days = fd.get('days');
     if (from && to) { params.set('from', from); params.set('to', to); }
     else { params.set('days', days || defaults.default_period_days || 30); }
+    // Фильтры по сотруднику/отделу — пишем в URL только при выборе конкретного,
+    // чтобы запросы по «все/все» оставались чистыми (и кешировались proxy).
+    const staffId = parseInt(fd.get('staff_id') || '0', 10);
+    const deptId  = parseInt(fd.get('dept_id')  || '0', 10);
+    if (staffId > 0) params.set('staff_id', String(staffId));
+    if (deptId  > 0) params.set('dept_id',  String(deptId));
     // Параметры периода Б — только в custom-режиме. В режиме "prev" backend
     // сам подберёт отрезок такой же длины перед A.
     if (compareSel.value === 'custom') {

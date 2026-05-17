@@ -9,6 +9,149 @@ namespace Analytics;
  * No data computation here — that belongs to the Python worker.
  */
 class Repository {
+    /**
+     * Список штатных сотрудников для фильтра. Только активные, чтобы не
+     * захламлять выпадающий список уволенными.
+     */
+    public static function allStaff(): array {
+        $prefix = TABLE_PREFIX;
+        $sql = "SELECT staff_id,
+                       COALESCE(NULLIF(TRIM(CONCAT(firstname, ' ', lastname)), ''), username) AS name
+                FROM `{$prefix}staff`
+                WHERE isactive = 1
+                ORDER BY name ASC";
+        $rows = [];
+        if ($res = \db_query($sql)) {
+            while ($r = \db_fetch_array($res)) {
+                $rows[] = ['id' => (int) $r['staff_id'], 'name' => $r['name']];
+            }
+        }
+        return $rows;
+    }
+
+    /**
+     * Список отделов для фильтра.
+     */
+    public static function allDepartments(): array {
+        $prefix = TABLE_PREFIX;
+        $sql = "SELECT id, name FROM `{$prefix}department` ORDER BY name ASC";
+        $rows = [];
+        if ($res = \db_query($sql)) {
+            while ($r = \db_fetch_array($res)) {
+                $rows[] = ['id' => (int) $r['id'], 'name' => $r['name']];
+            }
+        }
+        return $rows;
+    }
+
+    /**
+     * Пересчёт KPI на лету для фильтра по сотруднику/отделу (ТЗ 4.2.4).
+     *
+     * Когда выбран конкретный исполнитель или отдел, таблица
+     * `analytics_daily_stats` не подходит — там агрегаты по всему дню без
+     * разбивки. Тащим сырые тикеты за период с теми же FRT/resolution и
+     * группируем по DATE(created) прямо в PHP. По производительности
+     * сопоставимо с воркером: один SELECT + lineary в памяти.
+     *
+     * Результат повторяет формат строк `dailyRange()`, поэтому
+     * `summarise()` и фронт-рендеры работают без изменений.
+     */
+    public static function computeFiltered(\DateTimeInterface $from, \DateTimeInterface $to,
+                                            ?int $staffId, ?int $deptId,
+                                            int $slaFrtMin = 60, int $slaMttrHours = 24): array {
+        $prefix = TABLE_PREFIX;
+        $dFrom = \db_input($from->format('Y-m-d 00:00:00'), false);
+        $dTo   = \db_input($to->format('Y-m-d 23:59:59'), false);
+        $where = ["t.created BETWEEN '$dFrom' AND '$dTo'"];
+        if ($staffId && $staffId > 0) $where[] = 't.staff_id = ' . (int) $staffId;
+        if ($deptId && $deptId > 0)   $where[] = 't.dept_id = ' . (int) $deptId;
+        $whereSql = implode(' AND ', $where);
+
+        $sql = "
+            SELECT
+                DATE(t.created) AS bucket_date,
+                t.ticket_id, t.closed, t.isoverdue, t.staff_id, t.dept_id, t.status_id,
+                COALESCE(NULLIF(TRIM(CONCAT(s.firstname,' ',s.lastname)),''),
+                         IF(t.staff_id=0,'Не назначено','—')) AS staff_name,
+                d.name AS dept_name,
+                TIMESTAMPDIFF(MINUTE, t.created, t.closed) AS resolution_minutes,
+                TIMESTAMPDIFF(MINUTE, t.created,
+                    (SELECT MIN(te.created)
+                       FROM `{$prefix}thread` th
+                       JOIN `{$prefix}thread_entry` te
+                         ON te.thread_id = th.id
+                        AND te.type = 'R'
+                        AND te.staff_id > 0
+                      WHERE th.object_id = t.ticket_id
+                        AND th.object_type = 'T')) AS frt_minutes
+            FROM `{$prefix}ticket` t
+            LEFT JOIN `{$prefix}staff` s         ON s.staff_id = t.staff_id
+            LEFT JOIN `{$prefix}department` d    ON d.id       = t.dept_id
+            WHERE $whereSql
+        ";
+
+        $byDay = [];
+        if ($res = \db_query($sql)) {
+            while ($r = \db_fetch_array($res)) {
+                $day = $r['bucket_date'];
+                if (!isset($byDay[$day])) $byDay[$day] = [];
+                $byDay[$day][] = $r;
+            }
+        }
+        ksort($byDay);
+
+        $slaMttrMin = $slaMttrHours * 60;
+        $rows = [];
+        foreach ($byDay as $day => $tickets) {
+            $total = count($tickets);
+            $opened = 0; $closed = 0; $overdue = 0;
+            $frts = []; $mttrs = [];
+            $slaFrtOk = 0; $slaMttrOk = 0;
+            $agentLoad = []; $statusDist = []; $deptLoad = [];
+
+            foreach ($tickets as $t) {
+                $isClosed  = !empty($t['closed']);
+                $isOverdue = ((int) $t['isoverdue']) === 1;
+                if ($isClosed) $closed++; else $opened++;
+                if ($isOverdue) $overdue++;
+
+                if ($t['frt_minutes'] !== null && $t['frt_minutes'] !== '') {
+                    $f = (float) $t['frt_minutes'];
+                    $frts[] = $f;
+                    if ($f <= $slaFrtMin) $slaFrtOk++;
+                }
+                if ($isClosed && $t['resolution_minutes'] !== null && $t['resolution_minutes'] !== '') {
+                    $m = (float) $t['resolution_minutes'];
+                    $mttrs[] = $m;
+                    if ($m <= $slaMttrMin) $slaMttrOk++;
+                }
+                $agentLoad[$t['staff_name']] = ($agentLoad[$t['staff_name']] ?? 0) + 1;
+                $statusKey = $isClosed
+                    ? ($isOverdue ? 'Закрыта с просрочкой' : 'Закрыта')
+                    : ($isOverdue ? 'Открыта, просрочена' : 'Открыта');
+                $statusDist[$statusKey] = ($statusDist[$statusKey] ?? 0) + 1;
+                $deptName = $t['dept_name'] ?: 'Не указан';
+                $deptLoad[$deptName] = ($deptLoad[$deptName] ?? 0) + 1;
+            }
+
+            $rows[] = [
+                'bucket_date'        => $day,
+                'total_tickets'      => $total,
+                'opened_tickets'     => $opened,
+                'closed_tickets'     => $closed,
+                'overdue_tickets'    => $overdue,
+                'avg_frt_minutes'    => $frts  ? round(array_sum($frts)  / count($frts), 2) : null,
+                'avg_mttr_hours'     => $mttrs ? round((array_sum($mttrs) / count($mttrs)) / 60.0, 2) : null,
+                'sla_frt_percent'    => $frts  ? round($slaFrtOk * 100.0 / count($frts), 2) : null,
+                'sla_mttr_percent'   => $mttrs ? round($slaMttrOk * 100.0 / count($mttrs), 2) : null,
+                'agent_load'         => $agentLoad,
+                'status_distribution'=> $statusDist,
+                'department_load'    => $deptLoad,
+            ];
+        }
+        return $rows;
+    }
+
     public static function dailyRange(\DateTimeInterface $from, \DateTimeInterface $to): array {
         $sql = sprintf(
             "SELECT bucket_date, total_tickets, opened_tickets, closed_tickets,
@@ -185,10 +328,14 @@ class Repository {
      * штатного сотрудника). Лимит — защита от взрывных запросов: при
      * объёмных днях верх таблицы определяется сортировкой ниже.
      */
-    public static function ticketsForDay(string $date, int $limit = 200): array {
+    public static function ticketsForDay(string $date, int $limit = 200,
+                                         ?int $staffId = null, ?int $deptId = null): array {
         $prefix = TABLE_PREFIX;
         $tzDate = \db_input($date, false);
         $lim = (int) $limit;
+        $extra = '';
+        if ($staffId && $staffId > 0) $extra .= ' AND t.staff_id = ' . (int) $staffId;
+        if ($deptId  && $deptId  > 0) $extra .= ' AND t.dept_id  = ' . (int) $deptId;
         $sql = "
             SELECT t.ticket_id, t.number, t.created, t.closed,
                    t.isoverdue, t.isanswered, t.staff_id, t.dept_id, t.status_id,
@@ -209,7 +356,7 @@ class Repository {
             LEFT JOIN `{$prefix}staff` s          ON s.staff_id = t.staff_id
             LEFT JOIN `{$prefix}department` d     ON d.id = t.dept_id
             LEFT JOIN `{$prefix}ticket_status` ts ON ts.id = t.status_id
-            WHERE DATE(t.created) = '$tzDate'
+            WHERE DATE(t.created) = '$tzDate' $extra
             ORDER BY t.isoverdue DESC, t.isanswered ASC, t.created DESC
             LIMIT $lim";
 
