@@ -91,6 +91,34 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #1f2933; }
 .ost-analytics .muted { color: #8a93a0; font-size: 12.5px; }
 
+/* Админ-блок: триггер пересчёта + журнал событий ---------------------------- */
+.ost-analytics__admin { margin-top: 18px; border: 1px solid #e2e6ea; border-radius: 6px;
+    background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+.ost-analytics__admin > summary { padding: 12px 16px; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: #4a5260;
+    text-transform: uppercase; letter-spacing: 0.04em; }
+.ost-analytics__admin[open] > summary { border-bottom: 1px solid #e2e6ea; }
+.ost-analytics__admin-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+.ost-analytics__admin-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ost-analytics__admin-controls .action-button { margin: 0; }
+.ost-analytics__admin-msg { font-size: 12.5px; padding: 6px 10px; border-radius: 4px;
+    background: #eef2f7; color: #4a5260; display: none; }
+.ost-analytics__admin-msg.is-visible { display: inline-block; }
+.ost-analytics__admin-msg--ok   { background: #e6f5ec; color: #1e7a3f; }
+.ost-analytics__admin-msg--bad  { background: #fde9e7; color: #a02524; }
+.ost-analytics__logs-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ost-analytics__logs-table th, .ost-analytics__logs-table td {
+    padding: 6px 8px; border-bottom: 1px solid #eef2f7; text-align: left; vertical-align: top;
+}
+.ost-analytics__logs-table th { background: #f8fafc; color: #4a5260; font-weight: 600;
+    text-transform: uppercase; font-size: 11px; letter-spacing: 0.04em; }
+.ost-analytics__logs-table tr:hover td { background: #fafbfc; }
+.ost-analytics__log-level { display: inline-block; padding: 1px 6px; border-radius: 10px;
+    font-size: 10px; font-weight: 600; letter-spacing: 0.04em; }
+.ost-analytics__log-level--INFO    { background: #eef2f7; color: #4a5260; }
+.ost-analytics__log-level--WARNING { background: #fff1de; color: #a35a14; }
+.ost-analytics__log-level--ERROR   { background: #fde9e7; color: #a02524; }
+
 /* Drill-down модалка по клику на аномалию ------------------------------------ */
 .ost-modal-backdrop {
     position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55);
@@ -246,6 +274,36 @@
             </div>
         </div>
     </div>
+<?php if (!empty($isAdmin)): ?>
+    <details class="ost-analytics__admin" id="ost-analytics-admin">
+        <summary><?= __('Администрирование') ?></summary>
+        <div class="ost-analytics__admin-body">
+            <div class="ost-analytics__admin-controls">
+                <button type="button" class="action-button" id="ost-admin-trigger">
+                    <?= __('Запустить пересчёт сейчас') ?>
+                </button>
+                <button type="button" class="action-button" id="ost-admin-logs-refresh">
+                    <?= __('Обновить журнал') ?>
+                </button>
+                <label>
+                    <?= __('Уровень') ?>
+                    <select id="ost-admin-logs-level">
+                        <option value="all"><?= __('Все') ?></option>
+                        <option value="WARNING"><?= __('Предупреждения и выше') ?></option>
+                        <option value="ERROR"><?= __('Только ошибки') ?></option>
+                    </select>
+                </label>
+                <span class="ost-analytics__admin-msg" id="ost-admin-msg"></span>
+            </div>
+            <div>
+                <h5 class="muted" style="margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">
+                    <?= __('Журнал событий') ?>
+                </h5>
+                <div id="ost-admin-logs"><span class="muted"><?= __('Загрузка…') ?></span></div>
+            </div>
+        </div>
+    </details>
+<?php endif; ?>
 </div>
 
 <script>
@@ -962,6 +1020,104 @@
         <div class="ost-analytics__kpi-value">—</div>
         <div class="ost-analytics__kpi-sub">${e.message}</div></div>`;
     }
+  }
+
+  // ----- Админ-блок: триггер пересчёта + журнал -----------------------------
+  const adminPanel = document.getElementById('ost-analytics-admin');
+  if (adminPanel) {
+    const triggerBtn = document.getElementById('ost-admin-trigger');
+    const refreshBtn = document.getElementById('ost-admin-logs-refresh');
+    const levelSel   = document.getElementById('ost-admin-logs-level');
+    const msgEl      = document.getElementById('ost-admin-msg');
+    const logsEl     = document.getElementById('ost-admin-logs');
+
+    function adminMsg(text, kind) {
+      msgEl.className = 'ost-analytics__admin-msg ost-analytics__admin-msg--' + (kind || 'neutral') + ' is-visible';
+      msgEl.textContent = text;
+      if (kind === 'ok') setTimeout(() => msgEl.classList.remove('is-visible'), 6000);
+    }
+
+    function csrfToken() {
+      const meta = document.querySelector('meta[name="csrf_token"]');
+      return meta ? meta.getAttribute('content') : '';
+    }
+
+    async function triggerRun() {
+      triggerBtn.disabled = true;
+      adminMsg('Отправляем запрос…', 'neutral');
+      try {
+        const r = await fetch(`${apiBase}?action=trigger.run`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Accept': 'application/json',
+            'X-CSRFToken': csrfToken(),
+          },
+        });
+        const data = await r.json();
+        if (!r.ok || !data.ok) {
+          throw new Error(data.error || data.message || `HTTP ${r.status}`);
+        }
+        adminMsg(data.message || 'Запрос принят.', 'ok');
+        // Дайте воркеру несколько секунд, потом перечитайте журнал.
+        setTimeout(loadLogs, 4000);
+      } catch (e) {
+        adminMsg('Не удалось: ' + e.message, 'bad');
+      } finally {
+        triggerBtn.disabled = false;
+      }
+    }
+
+    async function loadLogs() {
+      logsEl.innerHTML = '<span class="muted">Загрузка…</span>';
+      try {
+        const params = new URLSearchParams({action: 'logs', level: levelSel.value, limit: 30});
+        const r = await fetch(`${apiBase}?${params.toString()}`, {
+          credentials: 'same-origin',
+          headers: {'Accept': 'application/json'},
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        renderLogs(data.rows || []);
+      } catch (e) {
+        logsEl.innerHTML = `<span class="muted" style="color:#a02524">Ошибка: ${e.message}</span>`;
+      }
+    }
+
+    function renderLogs(rows) {
+      if (!rows.length) {
+        logsEl.innerHTML = '<span class="muted">Записей нет.</span>';
+        return;
+      }
+      const esc = (s) => String(s).replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const html = ['<table class="ost-analytics__logs-table">',
+        '<thead><tr><th>Время</th><th>Уровень</th><th>Компонент</th><th>Событие</th><th>Сообщение</th></tr></thead>',
+        '<tbody>'];
+      rows.forEach(r => {
+        const lvl = r.level || 'INFO';
+        html.push(`<tr>
+          <td><code>${esc(r.ts)}</code></td>
+          <td><span class="ost-analytics__log-level ost-analytics__log-level--${esc(lvl)}">${esc(lvl)}</span></td>
+          <td>${esc(r.component || '')}</td>
+          <td>${esc(r.event || '')}</td>
+          <td>${esc(r.message || '')}</td>
+        </tr>`);
+      });
+      html.push('</tbody></table>');
+      logsEl.innerHTML = html.join('');
+    }
+
+    triggerBtn.addEventListener('click', triggerRun);
+    refreshBtn.addEventListener('click', loadLogs);
+    levelSel.addEventListener('change', loadLogs);
+    // Первая загрузка журнала — при первом раскрытии секции.
+    adminPanel.addEventListener('toggle', () => {
+      if (adminPanel.open && !adminPanel.dataset.loaded) {
+        adminPanel.dataset.loaded = '1';
+        loadLogs();
+      }
+    });
   }
 
   filtersForm.addEventListener('submit', (e) => { e.preventDefault(); refresh(); });

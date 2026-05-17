@@ -103,6 +103,52 @@ class Repository {
     }
 
     /**
+     * Последние записи журнала analytics_logs с опциональным фильтром.
+     * Используется UI-блоком администрирования.
+     *
+     * @param int    $limit Максимальное число строк (по умолчанию 30).
+     * @param string $level Фильтр по уровню: 'all' / 'ERROR' / 'WARNING' / 'INFO'.
+     */
+    public static function recentLogs(int $limit = 30, string $level = 'all'): array {
+        $lim = (int) max(1, min(500, $limit));
+        $where = '';
+        if ($level === 'ERROR') $where = "WHERE level = 'ERROR'";
+        elseif ($level === 'WARNING') $where = "WHERE level IN ('ERROR','WARNING')";
+
+        $sql = "SELECT id, ts, level, component, event, message, payload
+                FROM `analytics_logs`
+                $where
+                ORDER BY id DESC
+                LIMIT $lim";
+
+        $rows = [];
+        if ($res = \db_query($sql)) {
+            while ($r = \db_fetch_array($res)) {
+                $r['id'] = (int) $r['id'];
+                $r['payload'] = self::decodeJson($r['payload']);
+                $rows[] = $r;
+            }
+        }
+        return $rows;
+    }
+
+    /**
+     * Пишет в analytics_logs запись о запросе на принудительный пересчёт.
+     * Воркер опрашивает таблицу раз в секунду и просыпается на новых
+     * записях с event='run.requested'.
+     */
+    public static function recordRunRequest(string $requestedBy): int {
+        $payload = \db_input(json_encode(['by' => $requestedBy], JSON_UNESCAPED_UNICODE));
+        $message = \db_input("Forced reaggregation requested by $requestedBy");
+        $sql = "INSERT INTO `analytics_logs` (level, component, event, message, payload)
+                VALUES ('INFO', 'admin', 'run.requested', $message, $payload)";
+        if (\db_query($sql)) {
+            return (int) \db_insert_id();
+        }
+        return 0;
+    }
+
+    /**
      * Один суточный бакет + предыдущие N дней для контекста сравнения.
      * Используется drill-down модалкой при клике на запись аномалии.
      */

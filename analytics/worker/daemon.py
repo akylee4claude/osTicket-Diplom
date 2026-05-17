@@ -7,6 +7,8 @@ import signal
 import sys
 import time
 
+from sqlalchemy import text
+
 from . import config
 from .aggregator import run_once, write_log
 from .db import make_engine, wait_until_ready
@@ -27,6 +29,28 @@ def _handle_signal(signum, _frame):  # noqa: ANN001
     _stop = True
 
 
+def _latest_run_request_id(engine) -> int:
+    """Возвращает MAX(id) записей analytics_logs с event='run.requested'.
+
+    Эти записи пишет PHP-плагин при нажатии кнопки «Запустить пересчёт» в
+    админ-блоке дашборда. Воркер сравнивает значение с тем, что видел в
+    предыдущей итерации; если появилось новее — прерывает sleep и запускает
+    агрегацию немедленно.
+    """
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(text(
+                "SELECT MAX(id) FROM `analytics_logs` WHERE event = 'run.requested'"
+            )).scalar()
+        return int(row) if row else 0
+    except Exception:
+        # Не валим демон из-за временной недоступности БД — следующая итерация
+        # повторит. wait_until_ready на старте всё равно гарантирует базовую
+        # связность.
+        log.exception("Failed to poll analytics_logs for manual run requests")
+        return 0
+
+
 def main() -> int:
     settings = config.load()
     engine = make_engine(settings)
@@ -36,6 +60,8 @@ def main() -> int:
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
+
+    last_request_id = _latest_run_request_id(engine)
 
     while not _stop:
         try:
@@ -54,8 +80,16 @@ def main() -> int:
             except Exception:
                 log.exception("Failed to write error to analytics_logs")
 
+        # Сон между прогонами: каждую секунду проверяем стоп-сигнал И запрос
+        # на принудительный запуск. Это даёт UI «реакцию <1с» на нажатие
+        # кнопки «Запустить пересчёт» вместо ожидания следующего тика.
         for _ in range(settings.interval_sec):
             if _stop:
+                break
+            new_id = _latest_run_request_id(engine)
+            if new_id > last_request_id:
+                last_request_id = new_id
+                log.info("Manual run requested (request id=%d), breaking sleep", new_id)
                 break
             time.sleep(1)
 

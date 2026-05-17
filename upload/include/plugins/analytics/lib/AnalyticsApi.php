@@ -11,6 +11,16 @@ class Api {
         return $thisstaff && $thisstaff->getId();
     }
 
+    /**
+     * Доступ к административным методам (журнал, триггер пересчёта) —
+     * только полные администраторы osTicket. Соответствует ТЗ 4.4.5
+     * («администратор видит все настройки и логи»).
+     */
+    public function adminAccess(): bool {
+        global $thisstaff;
+        return $this->access() && $thisstaff->isAdmin();
+    }
+
     public function dashboard() {
         if (!$this->access()) return $this->json(['error' => 'forbidden'], 403);
 
@@ -328,6 +338,48 @@ class Api {
         return $this->json([
             'ok' => true,
             'last_worker_run' => Repository::lastWorkerRun(),
+        ]);
+    }
+
+    /**
+     * Журнал событий (`analytics_logs`) для UI-блока администрирования.
+     * Только для админов.
+     */
+    public function logs() {
+        if (!$this->adminAccess()) return $this->json(['error' => 'forbidden'], 403);
+        $level = (string) ($_GET['level'] ?? 'all');
+        $limit = (int) ($_GET['limit'] ?? 30);
+        return $this->json([
+            'rows' => Repository::recentLogs($limit, $level),
+            'last_worker_run' => Repository::lastWorkerRun(),
+        ]);
+    }
+
+    /**
+     * Триггер принудительного пересчёта. Только админу. Записывает в
+     * analytics_logs запись `event='run.requested'`; воркер опрашивает
+     * таблицу раз в секунду и запустит run_once при обнаружении новой
+     * записи. Сам PHP агрегацию не считает.
+     */
+    public function triggerRun() {
+        if (!$this->adminAccess()) return $this->json(['error' => 'forbidden'], 403);
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            return $this->json(['error' => 'method not allowed'], 405);
+        }
+        // CSRF: фронт обязан прислать X-CSRFToken из <meta name="csrf_token">.
+        global $thisstaff, $ost;
+        $token = $_SERVER['HTTP_X_CSRFTOKEN'] ?? $_POST['__CSRFToken__'] ?? '';
+        if (!$ost || !$ost->getCSRF() || !$ost->getCSRF()->validateToken($token)) {
+            return $this->json(['error' => 'csrf'], 403);
+        }
+        $by = method_exists($thisstaff, 'getName')
+            ? (string) $thisstaff->getName()
+            : ('staff#' . (int) $thisstaff->getId());
+        $id = Repository::recordRunRequest($by);
+        return $this->json([
+            'ok' => $id > 0,
+            'request_id' => $id,
+            'message' => 'Запрос отправлен. Воркер запустится в течение нескольких секунд.',
         ]);
     }
 

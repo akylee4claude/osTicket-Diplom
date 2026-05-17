@@ -14,7 +14,10 @@ require_once(__DIR__ . '/../staff.inc.php');
 require_once INCLUDE_DIR.'plugins/analytics/lib/AnalyticsController.php';
 require_once INCLUDE_DIR.'plugins/analytics/lib/AnalyticsApi.php';
 
-$action = isset($_GET['action']) ? (string) $_GET['action'] : '';
+// POST принимаем для админских действий (триггер пересчёта); остальные —
+// GET через ?action=…
+$action = $_GET['action'] ?? $_POST['action'] ?? '';
+$action = (string) $action;
 
 if ($action === '') {
     $ctrl = new \Analytics\Controller();
@@ -56,6 +59,12 @@ switch ($action) {
         break;
     case 'health':
         $api->health();
+        break;
+    case 'logs':
+        $api->logs();
+        break;
+    case 'trigger.run':
+        $api->triggerRun();
         break;
     default:
         Http::response(404, 'Unknown action');
