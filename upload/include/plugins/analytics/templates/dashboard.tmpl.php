@@ -141,9 +141,30 @@
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script>
-(() => {
+// PJAX strips external <script src> tags from incoming partials, so on
+// pjax navigation Chart.js may not be loaded yet when our IIFE runs.
+// Load it on-demand and only start once the global `Chart` is available.
+(function ensureChart(cb) {
+  if (typeof window.Chart !== 'undefined') { cb(); return; }
+  const existing = document.querySelector('script[data-ost-analytics-chartjs]');
+  if (existing) {
+    existing.addEventListener('load', cb, {once: true});
+    return;
+  }
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';
+  s.dataset.ostAnalyticsChartjs = '1';
+  s.onload = cb;
+  s.onerror = () => {
+    const el = document.getElementById('ost-analytics-kpis');
+    if (el) el.innerHTML = '<div class="ost-analytics__kpi ost-analytics__kpi--bad">'
+        + '<div class="ost-analytics__kpi-label">Ошибка</div>'
+        + '<div class="ost-analytics__kpi-value">—</div>'
+        + '<div class="ost-analytics__kpi-sub">Не удалось загрузить Chart.js (CDN недоступен)</div></div>';
+  };
+  document.head.appendChild(s);
+})(() => {
   const root = document.querySelector('.ost-analytics');
   if (!root) return;
   const apiBase = root.dataset.api;
@@ -331,5 +352,5 @@
 
   filtersForm.addEventListener('submit', (e) => { e.preventDefault(); refresh(); });
   refresh();
-})();
+});
 </script>
