@@ -36,6 +36,9 @@ switch ($action) {
     case 'dashboard':
         $api->dashboard();
         break;
+    case 'compare':
+        $api->compare();
+        break;
     case 'anomalies':
         $api->anomalies();
         break;
