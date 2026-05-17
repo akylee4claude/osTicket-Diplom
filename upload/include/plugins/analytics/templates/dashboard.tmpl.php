@@ -70,9 +70,23 @@
     text-transform: uppercase; letter-spacing: 0.04em;
 }
 .ost-analytics__panel { min-height: 110px; }
+.ost-analytics__anomalies-toolbar { display: flex; flex-wrap: wrap; align-items: center;
+    gap: 10px; margin-bottom: 10px; font-size: 12.5px; color: #4a5260; }
+.ost-analytics__anomalies-toolbar select { padding: 4px 8px; border: 1px solid #ccd2d8;
+    border-radius: 4px; background: #fff; font-size: 12.5px; color: #222; }
+.ost-analytics__anomalies-toolbar .summary { margin-left: auto; color: #6b7480; }
 .ost-analytics__anomalies .anomaly { padding: 8px 10px; border-left: 3px solid #c0392b;
-    background: #fff5f3; margin-bottom: 6px; font-size: 12.5px; border-radius: 0 4px 4px 0; }
+    background: #fff5f3; margin-bottom: 6px; font-size: 12.5px; border-radius: 0 4px 4px 0;
+    cursor: pointer; transition: background .12s ease, transform .12s ease; }
+.ost-analytics__anomalies .anomaly:hover { background: #ffeae6; transform: translateX(2px); }
 .ost-analytics__anomalies .anomaly--warn { border-left-color: #e67e22; background: #fff8ee; }
+.ost-analytics__anomalies .anomaly--warn:hover { background: #ffefd8; }
+.ost-analytics__anomalies-pager { display: flex; align-items: center; gap: 8px;
+    justify-content: center; margin-top: 8px; font-size: 12.5px; color: #4a5260; }
+.ost-analytics__anomalies-pager button { padding: 4px 10px; border: 1px solid #ccd2d8;
+    background: #fff; border-radius: 4px; cursor: pointer; color: #4a5260; }
+.ost-analytics__anomalies-pager button:hover:not(:disabled) { background: #f3f5f7; }
+.ost-analytics__anomalies-pager button:disabled { opacity: 0.5; cursor: not-allowed; }
 .ost-analytics__status code { background: #eef2f7; padding: 1px 6px; border-radius: 3px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #1f2933; }
 .ost-analytics .muted { color: #8a93a0; font-size: 12.5px; }
@@ -513,33 +527,139 @@
     return fmt[kind] ? fmt[kind](v) : String(v);
   }
 
+  // Локальное состояние блока аномалий: исходные данные + текущий фильтр и
+  // страница. Хранится в module-scope, чтобы переход по страницам и смена
+  // фильтра не дёргали бэкенд.
+  const anomState = {
+    raw: [],
+    filter: 'all',  // 'all' | 'warn' | 'bad'
+    page: 0,
+    perPage: 5,
+  };
+
   function renderAnomalies(payload) {
-    if (!payload.anomalies || payload.anomalies.length === 0) {
-      anomaliesEl.innerHTML = `<span class="muted">За выбранный период резких отклонений ` +
-        `не обнаружено. Метрики в пределах обычной вариации.</span>`;
-      return;
-    }
-    // Сортируем по дате (свежие сверху), при равенстве — по убыванию |Z|.
-    const sorted = payload.anomalies.slice().sort((a, b) => {
+    // Сортируем один раз и кладём в состояние; всё остальное — на клиенте.
+    const list = (payload && payload.anomalies) ? payload.anomalies.slice() : [];
+    list.sort((a, b) => {
       if (a.bucket_date !== b.bucket_date) return a.bucket_date < b.bucket_date ? 1 : -1;
       return Math.abs(b.z_score) - Math.abs(a.z_score);
     });
-    const header = `<div class="muted" style="margin-bottom:6px">` +
-      `Обнаружено отклонений: <b>${sorted.length}</b>. ` +
-      `Точки этих дней подсвечены на линейных графиках.</div>`;
-    anomaliesEl.innerHTML = header + sorted.map(a => {
+    anomState.raw = list;
+    anomState.page = 0;
+    renderAnomaliesView();
+  }
+
+  function severityOf(a) {
+    return Math.abs(a.z_score) >= 3 ? 'bad' : 'warn';
+  }
+
+  function renderAnomaliesView() {
+    const filtered = anomState.raw.filter(a =>
+      anomState.filter === 'all' ? true : severityOf(a) === anomState.filter
+    );
+    const totalRaw = anomState.raw.length;
+    const totalFiltered = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(totalFiltered / anomState.perPage));
+    if (anomState.page >= totalPages) anomState.page = totalPages - 1;
+
+    // Тулбар + сводка одинаковые для всех состояний.
+    const toolbar = `
+      <div class="ost-analytics__anomalies-toolbar">
+        <label>Показать
+          <select id="ost-anomalies-filter">
+            <option value="all"${anomState.filter==='all'?' selected':''}>Все</option>
+            <option value="warn"${anomState.filter==='warn'?' selected':''}>Только предупреждения</option>
+            <option value="bad"${anomState.filter==='bad'?' selected':''}>Только критические</option>
+          </select>
+        </label>
+        <span class="summary">${
+          totalRaw === 0
+            ? 'Всего: 0 отклонений'
+            : (anomState.filter === 'all'
+                ? `Всего: <b>${totalRaw}</b> отклонений`
+                : `Показано: <b>${totalFiltered}</b> из <b>${totalRaw}</b>`)
+        }</span>
+      </div>`;
+
+    if (totalRaw === 0) {
+      anomaliesEl.innerHTML = toolbar +
+        `<span class="muted">За выбранный период резких отклонений не обнаружено. ` +
+        `Метрики в пределах обычной вариации.</span>`;
+      bindAnomalyToolbar();
+      return;
+    }
+
+    if (totalFiltered === 0) {
+      anomaliesEl.innerHTML = toolbar +
+        `<span class="muted">По выбранному фильтру записей нет. ` +
+        `Сейчас в периоде <b>${totalRaw}</b> отклонений другого уровня.</span>`;
+      bindAnomalyToolbar();
+      return;
+    }
+
+    const start = anomState.page * anomState.perPage;
+    const slice = filtered.slice(start, start + anomState.perPage);
+
+    const list = slice.map(a => {
       const info = METRIC_INFO[a.metric] || {label: a.metric, kind: 'int'};
       const isUp = a.value > a.mean;
       const arrow = isUp ? '▲' : '▼';
-      const cls = Math.abs(a.z_score) >= 3 ? '' : 'anomaly--warn';
+      const cls = severityOf(a) === 'bad' ? '' : 'anomaly--warn';
       const verb = isUp ? 'выше' : 'ниже';
-      return `<div class="anomaly ${cls}">
+      // data-* атрибуты — задел под drill-down: при клике в будущем
+      // достанем оттуда метрику и дату и откроем подробности.
+      return `<div class="anomaly ${cls}" data-metric="${a.metric}"
+                                          data-date="${a.bucket_date}"
+                                          title="Подробности по этому дню — в следующей версии">
         ${arrow} <b>${info.label}</b> · ${a.bucket_date}:
         текущее значение <b>${fmtMetric(info.kind, a.value)}</b>,
         что заметно ${verb} обычного
         (среднее по предыдущим суткам ≈ ${fmtMetric(info.kind, a.mean)}).
       </div>`;
     }).join('');
+
+    const pager = totalPages > 1 ? `
+      <div class="ost-analytics__anomalies-pager">
+        <button id="ost-anomalies-prev" ${anomState.page === 0 ? 'disabled' : ''}>← Назад</button>
+        <span>Стр. <b>${anomState.page + 1}</b> из <b>${totalPages}</b></span>
+        <button id="ost-anomalies-next" ${anomState.page >= totalPages - 1 ? 'disabled' : ''}>Вперёд →</button>
+      </div>` : '';
+
+    anomaliesEl.innerHTML = toolbar + list + pager;
+    bindAnomalyToolbar();
+    bindAnomalyPager();
+    bindAnomalyCards();
+  }
+
+  function bindAnomalyToolbar() {
+    const sel = document.getElementById('ost-anomalies-filter');
+    if (sel) sel.addEventListener('change', (e) => {
+      anomState.filter = e.target.value;
+      anomState.page = 0;
+      renderAnomaliesView();
+    });
+  }
+
+  function bindAnomalyPager() {
+    const prev = document.getElementById('ost-anomalies-prev');
+    const next = document.getElementById('ost-anomalies-next');
+    if (prev) prev.addEventListener('click', () => {
+      if (anomState.page > 0) { anomState.page--; renderAnomaliesView(); }
+    });
+    if (next) next.addEventListener('click', () => {
+      anomState.page++; renderAnomaliesView();
+    });
+  }
+
+  function bindAnomalyCards() {
+    // Drill-down пока заглушка — в следующей версии откроем модалку с
+    // суточным агрегатом и списком тикетов за день/метрику.
+    anomaliesEl.querySelectorAll('.anomaly').forEach(card => {
+      card.addEventListener('click', () => {
+        const m = card.dataset.metric, d = card.dataset.date;
+        console.info('[anomaly drill-down]', {metric: m, date: d});
+      });
+    });
   }
 
   function renderStatus(lastRun) {
