@@ -103,6 +103,91 @@ class Repository {
     }
 
     /**
+     * Один суточный бакет + предыдущие N дней для контекста сравнения.
+     * Используется drill-down модалкой при клике на запись аномалии.
+     */
+    public static function bucketWithContext(string $date, int $contextDays = 7): array {
+        $tzDate = \db_input($date, false);
+        $bucket = null;
+        $context = [];
+        $sql = "SELECT bucket_date, total_tickets, opened_tickets, closed_tickets,
+                       overdue_tickets, avg_frt_minutes, avg_mttr_hours,
+                       sla_frt_percent, sla_mttr_percent,
+                       agent_load, status_distribution, department_load
+                FROM `analytics_daily_stats`
+                WHERE bucket_date BETWEEN DATE_SUB('$tzDate', INTERVAL $contextDays DAY)
+                                      AND '$tzDate'
+                ORDER BY bucket_date ASC";
+        if ($res = \db_query($sql)) {
+            while ($r = \db_fetch_array($res)) {
+                $r['agent_load'] = self::decodeJson($r['agent_load']);
+                $r['status_distribution'] = self::decodeJson($r['status_distribution']);
+                $r['department_load'] = self::decodeJson($r['department_load']);
+                if ($r['bucket_date'] === $date) {
+                    $bucket = $r;
+                } else {
+                    $context[] = $r;
+                }
+            }
+        }
+        return ['bucket' => $bucket, 'context' => $context];
+    }
+
+    /**
+     * Список тикетов, созданных в указанные сутки, с join-ами на
+     * staff/department/status и расчётом FRT (минут до первого ответа
+     * штатного сотрудника). Лимит — защита от взрывных запросов: при
+     * объёмных днях верх таблицы определяется сортировкой ниже.
+     */
+    public static function ticketsForDay(string $date, int $limit = 200): array {
+        $prefix = TABLE_PREFIX;
+        $tzDate = \db_input($date, false);
+        $lim = (int) $limit;
+        $sql = "
+            SELECT t.ticket_id, t.number, t.created, t.closed,
+                   t.isoverdue, t.isanswered, t.staff_id, t.dept_id, t.status_id,
+                   COALESCE(NULLIF(TRIM(CONCAT(s.firstname,' ',s.lastname)),''),
+                            IF(t.staff_id=0,'Не назначено','—')) AS staff_name,
+                   d.name AS dept_name,
+                   ts.name AS status_name,
+                   TIMESTAMPDIFF(MINUTE, t.created,
+                       (SELECT MIN(te.created)
+                          FROM `{$prefix}thread` th
+                          JOIN `{$prefix}thread_entry` te
+                            ON te.thread_id = th.id
+                         WHERE th.object_id = t.ticket_id
+                           AND th.object_type = 'T'
+                           AND te.type = 'R'
+                           AND te.staff_id > 0)) AS frt_minutes
+            FROM `{$prefix}ticket` t
+            LEFT JOIN `{$prefix}staff` s          ON s.staff_id = t.staff_id
+            LEFT JOIN `{$prefix}department` d     ON d.id = t.dept_id
+            LEFT JOIN `{$prefix}ticket_status` ts ON ts.id = t.status_id
+            WHERE DATE(t.created) = '$tzDate'
+            ORDER BY t.isoverdue DESC, t.isanswered ASC, t.created DESC
+            LIMIT $lim";
+
+        $rows = [];
+        if ($res = \db_query($sql)) {
+            while ($r = \db_fetch_array($res)) {
+                $rows[] = [
+                    'ticket_id'   => (int) $r['ticket_id'],
+                    'number'      => $r['number'],
+                    'created'     => $r['created'],
+                    'closed'      => $r['closed'],
+                    'isoverdue'   => (int) $r['isoverdue'],
+                    'isanswered'  => (int) $r['isanswered'],
+                    'staff_name'  => $r['staff_name'],
+                    'dept_name'   => $r['dept_name'] ?: 'Не указан',
+                    'status_name' => $r['status_name'] ?: '—',
+                    'frt_minutes' => $r['frt_minutes'] === null ? null : (int) $r['frt_minutes'],
+                ];
+            }
+        }
+        return $rows;
+    }
+
+    /**
      * Rolling Z-score обнаружение аномалий по суточным агрегатам.
      *
      * Для каждого дня i сравниваем текущее значение метрики со средним и

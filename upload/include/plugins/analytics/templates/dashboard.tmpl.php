@@ -90,6 +90,56 @@
 .ost-analytics__status code { background: #eef2f7; padding: 1px 6px; border-radius: 3px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #1f2933; }
 .ost-analytics .muted { color: #8a93a0; font-size: 12.5px; }
+
+/* Drill-down модалка по клику на аномалию ------------------------------------ */
+.ost-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 10000; padding: 24px;
+}
+.ost-modal {
+    background: #fff; border-radius: 8px; max-width: 1000px; width: 100%;
+    max-height: 90vh; overflow: auto;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+    display: flex; flex-direction: column;
+}
+.ost-modal__head { display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid #e2e6ea;
+    background: linear-gradient(180deg,#fafbfc,#f3f5f7); position: sticky; top: 0; }
+.ost-modal__title { margin: 0; font-size: 16px; font-weight: 600; color: #1f2933; }
+.ost-modal__close { background: transparent; border: 0; font-size: 22px; line-height: 1;
+    color: #6b7480; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+.ost-modal__close:hover { background: #eef2f7; color: #1f2933; }
+.ost-modal__body { padding: 16px 18px; }
+.ost-modal__section { margin-bottom: 18px; }
+.ost-modal__section h5 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase;
+    color: #6b7480; letter-spacing: 0.04em; font-weight: 600; }
+.ost-modal__kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px; }
+.ost-modal__kpi { background: #f8fafc; border: 1px solid #e2e6ea; border-radius: 5px;
+    padding: 10px 12px; }
+.ost-modal__kpi--highlight { background: #fff5f3; border-color: #f1b9b4; }
+.ost-modal__kpi-label { font-size: 10px; text-transform: uppercase; color: #6b7480;
+    letter-spacing: 0.05em; font-weight: 600; }
+.ost-modal__kpi-value { font-size: 18px; font-weight: 600; margin-top: 4px; color: #1f2933; }
+.ost-modal__kpi-sub   { font-size: 11px; color: #8a93a0; margin-top: 2px; }
+.ost-modal__table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ost-modal__table th, .ost-modal__table td {
+    padding: 6px 8px; border-bottom: 1px solid #eef2f7; text-align: left; vertical-align: top;
+}
+.ost-modal__table th { background: #f8fafc; color: #4a5260; font-weight: 600;
+    text-transform: uppercase; font-size: 11px; letter-spacing: 0.04em; }
+.ost-modal__table tr:hover td { background: #fafbfc; }
+.ost-modal__badge { display: inline-block; padding: 2px 6px; border-radius: 10px;
+    font-size: 10px; font-weight: 600; line-height: 1.4; text-transform: uppercase; }
+.ost-modal__badge--bad  { background: #fde9e7; color: #a02524; }
+.ost-modal__badge--warn { background: #fff1de; color: #a35a14; }
+.ost-modal__badge--ok   { background: #e6f5ec; color: #1e7a3f; }
+.ost-modal__badge--neutral { background: #eef2f7; color: #4a5260; }
+.ost-modal__split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 720px) { .ost-modal__split { grid-template-columns: 1fr; } }
+.ost-modal__list { font-size: 12.5px; }
+.ost-modal__list li { margin: 2px 0; }
 </style>
 
 <div class="ost-analytics__head">
@@ -652,14 +702,173 @@
   }
 
   function bindAnomalyCards() {
-    // Drill-down пока заглушка — в следующей версии откроем модалку с
-    // суточным агрегатом и списком тикетов за день/метрику.
     anomaliesEl.querySelectorAll('.anomaly').forEach(card => {
       card.addEventListener('click', () => {
-        const m = card.dataset.metric, d = card.dataset.date;
-        console.info('[anomaly drill-down]', {metric: m, date: d});
+        openDetail(card.dataset.date, card.dataset.metric);
       });
     });
+  }
+
+  // ----- Drill-down модалка -------------------------------------------------
+
+  let detailKeyHandler = null;
+
+  function closeDetail() {
+    const back = document.getElementById('ost-modal-backdrop');
+    if (back) back.remove();
+    if (detailKeyHandler) {
+      document.removeEventListener('keydown', detailKeyHandler);
+      detailKeyHandler = null;
+    }
+  }
+
+  function openDetailSkeleton(date, metric) {
+    closeDetail();
+    const info = METRIC_INFO[metric] || {label: metric || 'агрегат', kind: 'int'};
+    const back = document.createElement('div');
+    back.id = 'ost-modal-backdrop';
+    back.className = 'ost-modal-backdrop';
+    back.innerHTML = `
+      <div class="ost-modal" role="dialog" aria-modal="true">
+        <div class="ost-modal__head">
+          <h4 class="ost-modal__title">
+            Подробности за ${date}${metric ? ' · ' + info.label : ''}
+          </h4>
+          <button class="ost-modal__close" type="button" aria-label="Закрыть">×</button>
+        </div>
+        <div class="ost-modal__body">
+          <div class="muted">Загружаем данные за ${date}…</div>
+        </div>
+      </div>`;
+    document.body.appendChild(back);
+
+    // Закрытие: крестик, клик по бэкдропу, Esc.
+    back.querySelector('.ost-modal__close').addEventListener('click', closeDetail);
+    back.addEventListener('click', (e) => { if (e.target === back) closeDetail(); });
+    detailKeyHandler = (e) => { if (e.key === 'Escape') closeDetail(); };
+    document.addEventListener('keydown', detailKeyHandler);
+  }
+
+  async function openDetail(date, metric) {
+    openDetailSkeleton(date, metric);
+    try {
+      const params = new URLSearchParams({action: 'detail', date});
+      if (metric) params.set('metric', metric);
+      const r = await fetch(`${apiBase}?${params.toString()}`, {
+        credentials: 'same-origin',
+        headers: {'Accept': 'application/json'},
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      renderDetailBody(data);
+    } catch (e) {
+      const body = document.querySelector('#ost-modal-backdrop .ost-modal__body');
+      if (body) body.innerHTML = `<div class="muted" style="color:#a02524">
+        Не удалось загрузить подробности: ${e.message}</div>`;
+    }
+  }
+
+  function renderDetailBody(data) {
+    const body = document.querySelector('#ost-modal-backdrop .ost-modal__body');
+    if (!body) return;
+
+    if (!data.bucket) {
+      body.innerHTML = `<div class="muted">Агрегат за ${data.date} не найден в БД. ` +
+        `Возможно, воркер ещё не обработал этот день — попробуйте позже или ` +
+        `выполните <code>analytics.tools.reaggregate --days 90</code>.</div>`;
+      return;
+    }
+    const b = data.bucket;
+    const ctx = data.context || [];
+
+    // KPI-карточки, целевая метрика выделена.
+    const kpiList = [
+      ['total_tickets',    'Всего заявок'],
+      ['opened_tickets',   'Открытых'],
+      ['closed_tickets',   'Закрытых'],
+      ['overdue_tickets',  'Просроченных'],
+      ['avg_frt_minutes',  'Среднее FRT'],
+      ['avg_mttr_hours',   'Среднее MTTR'],
+      ['sla_frt_percent',  'SLA по FRT'],
+      ['sla_mttr_percent', 'SLA по MTTR'],
+    ];
+    const kpiHtml = kpiList.map(([key, label]) => {
+      const info = METRIC_INFO[key] || {kind: 'int'};
+      const hi = key === data.metric ? ' ost-modal__kpi--highlight' : '';
+      // Среднее по предыдущим суткам для контекста — для подписи под значением.
+      const vals = ctx.map(r => r[key]).filter(v => v != null).map(Number);
+      const mean = vals.length ? vals.reduce((a, c) => a + c, 0) / vals.length : null;
+      const sub = mean != null
+        ? `обычное ~ ${fmtMetric(info.kind, mean)}`
+        : '';
+      return `<div class="ost-modal__kpi${hi}">
+        <div class="ost-modal__kpi-label">${label}</div>
+        <div class="ost-modal__kpi-value">${fmtMetric(info.kind, b[key])}</div>
+        <div class="ost-modal__kpi-sub">${sub}</div>
+      </div>`;
+    }).join('');
+
+    // Распределения за день.
+    const distList = (title, obj) => {
+      const entries = Object.entries(obj || {});
+      if (entries.length === 0) return `<div class="muted">${title}: нет данных.</div>`;
+      const total = entries.reduce((s, [, v]) => s + Number(v), 0);
+      const lis = entries.map(([k, v]) => {
+        const pct = total ? (Number(v) / total * 100).toFixed(0) : '0';
+        return `<li><b>${k}</b> — ${v} (${pct}%)</li>`;
+      }).join('');
+      return `<div><h5>${title}</h5><ul class="ost-modal__list">${lis}</ul></div>`;
+    };
+
+    // Таблица тикетов за день.
+    const ticketsHtml = (data.tickets && data.tickets.length)
+      ? `<table class="ost-modal__table">
+          <thead><tr>
+            <th>№</th><th>Создан</th><th>Статус</th><th>Сотрудник</th>
+            <th>Отдел</th><th>FRT</th><th>Флаги</th>
+          </tr></thead>
+          <tbody>
+          ${data.tickets.map(t => {
+            const flags = [];
+            if (t.isoverdue) flags.push('<span class="ost-modal__badge ost-modal__badge--bad">просрочен</span>');
+            if (!t.isanswered) flags.push('<span class="ost-modal__badge ost-modal__badge--warn">без ответа</span>');
+            if (t.closed) flags.push('<span class="ost-modal__badge ost-modal__badge--ok">закрыт</span>');
+            if (flags.length === 0) flags.push('<span class="ost-modal__badge ost-modal__badge--neutral">в работе</span>');
+            const frt = t.frt_minutes == null ? '—'
+              : (t.frt_minutes >= 60
+                  ? `${(t.frt_minutes / 60).toFixed(1)} ч`
+                  : `${t.frt_minutes} мин`);
+            return `<tr>
+              <td><b>${t.number || ('#' + t.ticket_id)}</b></td>
+              <td>${t.created}</td>
+              <td>${t.status_name}</td>
+              <td>${t.staff_name}</td>
+              <td>${t.dept_name}</td>
+              <td>${frt}</td>
+              <td>${flags.join(' ')}</td>
+            </tr>`;
+          }).join('')}
+          </tbody>
+        </table>
+        ${data.tickets_truncated
+          ? '<div class="muted" style="margin-top:6px">Показаны первые 200 тикетов (отсортированы: просроченные → без ответа → новые).</div>'
+          : ''}`
+      : '<div class="muted">Тикетов за этот день не найдено в источнике.</div>';
+
+    body.innerHTML = `
+      <div class="ost-modal__section">
+        <h5>Сводка за ${data.date}</h5>
+        <div class="ost-modal__kpis">${kpiHtml}</div>
+      </div>
+      <div class="ost-modal__section ost-modal__split">
+        ${distList('Распределение по статусам', b.status_distribution)}
+        ${distList('Загрузка сотрудников',    b.agent_load)}
+      </div>
+      <div class="ost-modal__section">
+        <h5>Тикеты, созданные ${data.date}</h5>
+        ${ticketsHtml}
+      </div>
+    `;
   }
 
   function renderStatus(lastRun) {

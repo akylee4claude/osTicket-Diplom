@@ -42,6 +42,9 @@ switch ($action) {
     case 'anomalies':
         $api->anomalies();
         break;
+    case 'detail':
+        $api->detail();
+        break;
     case 'export.csv':
         $api->exportCsv();
         break;

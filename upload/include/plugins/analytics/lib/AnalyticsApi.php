@@ -61,6 +61,34 @@ class Api {
         ]);
     }
 
+    /**
+     * Подробности за конкретные сутки. Источник кликов — карточки аномалий.
+     * Возвращает агрегат за день + список тикетов за день + контекст по 7
+     * предыдущим суткам.
+     */
+    public function detail() {
+        if (!$this->access()) return $this->json(['error' => 'forbidden'], 403);
+
+        $date = $_GET['date'] ?? '';
+        // Базовая валидация формата YYYY-MM-DD, чтобы строка не утекла в SQL.
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return $this->json(['error' => 'bad date'], 400);
+        }
+        $metric = isset($_GET['metric']) ? (string) $_GET['metric'] : null;
+
+        $ctx = Repository::bucketWithContext($date, 7);
+        $tickets = Repository::ticketsForDay($date, 200);
+
+        return $this->json([
+            'date' => $date,
+            'metric' => $metric,
+            'bucket' => $ctx['bucket'],
+            'context' => $ctx['context'],
+            'tickets' => $tickets,
+            'tickets_truncated' => count($tickets) === 200,
+        ]);
+    }
+
     public function anomalies() {
         if (!$this->access()) return $this->json(['error' => 'forbidden'], 403);
 
