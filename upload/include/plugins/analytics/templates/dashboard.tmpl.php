@@ -367,6 +367,7 @@
       ticketsDatasets.push(
         Object.assign({label: 'Всего (Б)', data: alignB('total_tickets')}, bStyle(colors.primary)),
         Object.assign({label: 'Закрыто (Б)', data: alignB('closed_tickets')}, bStyle(colors.good)),
+        Object.assign({label: 'Просрочено (Б)', data: alignB('overdue_tickets')}, bStyle(colors.bad)),
       );
     }
 
