@@ -102,37 +102,58 @@ class Repository {
         return null;
     }
 
-    public static function detectAnomalies(array $rows, float $z): array {
+    /**
+     * Rolling Z-score обнаружение аномалий по суточным агрегатам.
+     *
+     * Для каждого дня i сравниваем текущее значение метрики со средним и
+     * стандартным отклонением по предыдущим `window` дням (ТЗ 4.3.1 —
+     * скользящее окно 7 суток). Если |Z| >= $z, день помечается как
+     * аномалия для этой метрики.
+     *
+     * Возвращает массив записей вида:
+     *   { metric, bucket_date, value, mean, std, z_score }
+     * по одной на каждое (день × метрика), превысившее порог. Сортировка —
+     * по дате возрастания, чтобы фронт мог удобно мапить на ось X.
+     */
+    public static function detectAnomalies(array $rows, float $z, int $window = 7): array {
         if (count($rows) < 4) return [];
         $metrics = ['total_tickets', 'avg_frt_minutes', 'avg_mttr_hours',
                     'sla_frt_percent', 'overdue_tickets'];
-        $last = $rows[count($rows) - 1];
-        $past = array_slice($rows, 0, -1);
+        $sorted = $rows;
+        usort($sorted, fn($a, $b) => strcmp($a['bucket_date'], $b['bucket_date']));
 
         $anomalies = [];
-        foreach ($metrics as $metric) {
-            $values = array_values(array_filter(
-                array_map(fn($r) => $r[$metric] === null ? null : (float)$r[$metric], $past),
-                fn($v) => $v !== null
-            ));
-            if (count($values) < 3) continue;
-            $mean = array_sum($values) / count($values);
-            $variance = 0.0;
-            foreach ($values as $v) { $variance += ($v - $mean) ** 2; }
-            $std = sqrt($variance / count($values));
-            if ($std == 0.0) continue;
-            $current = $last[$metric];
-            if ($current === null) continue;
-            $score = ((float)$current - $mean) / $std;
-            if (abs($score) >= $z) {
-                $anomalies[] = [
-                    'metric' => $metric,
-                    'bucket_date' => $last['bucket_date'],
-                    'value' => round((float)$current, 2),
-                    'mean' => round($mean, 2),
-                    'std' => round($std, 2),
-                    'z_score' => round($score, 2),
-                ];
+        $n = count($sorted);
+        for ($i = 1; $i < $n; $i++) {
+            $start = max(0, $i - $window);
+            $past = array_slice($sorted, $start, $i - $start);
+            if (count($past) < 3) continue;
+            $current = $sorted[$i];
+            foreach ($metrics as $metric) {
+                $values = [];
+                foreach ($past as $r) {
+                    if ($r[$metric] === null || $r[$metric] === '') continue;
+                    $values[] = (float) $r[$metric];
+                }
+                if (count($values) < 3) continue;
+                $mean = array_sum($values) / count($values);
+                $variance = 0.0;
+                foreach ($values as $v) { $variance += ($v - $mean) ** 2; }
+                $std = sqrt($variance / count($values));
+                if ($std == 0.0) continue;
+                $cur = $current[$metric];
+                if ($cur === null) continue;
+                $score = ((float) $cur - $mean) / $std;
+                if (abs($score) >= $z) {
+                    $anomalies[] = [
+                        'metric' => $metric,
+                        'bucket_date' => $current['bucket_date'],
+                        'value' => round((float) $cur, 2),
+                        'mean' => round($mean, 2),
+                        'std' => round($std, 2),
+                        'z_score' => round($score, 2),
+                    ];
+                }
             }
         }
         return $anomalies;

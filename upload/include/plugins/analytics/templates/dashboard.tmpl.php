@@ -343,10 +343,52 @@
     };
   }
 
-  function buildCharts(data, compareData) {
+  // Карта аномалий вида { "YYYY-MM-DD::<metric>": 'warn'|'bad' }.
+  // 'bad' — критическое отклонение (|Z|>=3), 'warn' — умеренное (|Z|>=z_порог).
+  // Используется для подсветки соответствующих точек на линейных графиках.
+  function buildAnomalyMap(anomalies) {
+    const map = {};
+    if (!anomalies || !Array.isArray(anomalies)) return map;
+    anomalies.forEach(a => {
+      const sev = Math.abs(a.z_score) >= 3 ? 'bad' : 'warn';
+      // если одна и та же точка нарушает несколько метрик — оставляем худшую
+      const key = `${a.bucket_date}::${a.metric}`;
+      const prev = map[key];
+      if (prev === 'bad') return;
+      map[key] = sev;
+    });
+    return map;
+  }
+
+  // Возвращает массивы pointRadius / pointBackgroundColor / pointBorderColor
+  // длиной = labels.length: обычная точка — дефолт, аномалия — крупная
+  // цветная с белой обводкой.
+  function pointStylesFor(metric, labels, anomalyMap, fallbackColor) {
+    const radii = [], bgs = [], borders = [], hovers = [];
+    labels.forEach(date => {
+      const sev = anomalyMap[`${date}::${metric}`];
+      if (sev === 'bad') {
+        radii.push(7); bgs.push(colors.bad); borders.push('#fff'); hovers.push(9);
+      } else if (sev === 'warn') {
+        radii.push(5); bgs.push(colors.warn); borders.push('#fff'); hovers.push(7);
+      } else {
+        radii.push(2.5); bgs.push(fallbackColor); borders.push(fallbackColor); hovers.push(5);
+      }
+    });
+    return {
+      pointRadius: radii,
+      pointBackgroundColor: bgs,
+      pointBorderColor: borders,
+      pointBorderWidth: 2,
+      pointHoverRadius: hovers,
+    };
+  }
+
+  function buildCharts(data, compareData, anomalies) {
     const seriesA = data.series;
     const seriesB = compareData ? compareData.b.series : null;
     const labels = seriesA.map(p => p.date);
+    const anomalyMap = buildAnomalyMap(anomalies);
 
     // Аккуратно сопоставляем индексы. Длина B может отличаться — Chart.js
     // сам обрежет/дополнит null, нам важно не выйти за длину A.
@@ -355,13 +397,19 @@
       : null;
 
     const ticketsDatasets = [
-      {label: 'Всего (период А)', data: seriesA.map(p => p.total_tickets),
-       borderColor: colors.primary, backgroundColor: colors.primary + '22',
-       borderWidth: 3, fill: !compareData, tension: 0.25},
-      {label: 'Закрыто (А)', data: seriesA.map(p => p.closed_tickets),
-       borderColor: colors.good, borderWidth: 3, tension: 0.25},
-      {label: 'Просрочено (А)', data: seriesA.map(p => p.overdue_tickets),
-       borderColor: colors.bad, borderWidth: 3, tension: 0.25, borderDash: [4,4]},
+      Object.assign(
+        {label: 'Всего (период А)', data: seriesA.map(p => p.total_tickets),
+         borderColor: colors.primary, backgroundColor: colors.primary + '22',
+         borderWidth: 3, fill: !compareData, tension: 0.25},
+        pointStylesFor('total_tickets', labels, anomalyMap, colors.primary)),
+      Object.assign(
+        {label: 'Закрыто (А)', data: seriesA.map(p => p.closed_tickets),
+         borderColor: colors.good, borderWidth: 3, tension: 0.25},
+        pointStylesFor('closed_tickets', labels, anomalyMap, colors.good)),
+      Object.assign(
+        {label: 'Просрочено (А)', data: seriesA.map(p => p.overdue_tickets),
+         borderColor: colors.bad, borderWidth: 3, tension: 0.25, borderDash: [4,4]},
+        pointStylesFor('overdue_tickets', labels, anomalyMap, colors.bad)),
     ];
     if (seriesB) {
       ticketsDatasets.push(
@@ -411,10 +459,14 @@
     });
 
     const timesDatasets = [
-      {label: 'FRT (А), мин', data: seriesA.map(p => p.avg_frt_minutes),
-       borderColor: colors.warn, borderWidth: 3, yAxisID: 'y', tension: 0.25},
-      {label: 'MTTR (А), ч', data: seriesA.map(p => p.avg_mttr_hours),
-       borderColor: colors.bad, borderWidth: 3, yAxisID: 'y1', tension: 0.25},
+      Object.assign(
+        {label: 'FRT (А), мин', data: seriesA.map(p => p.avg_frt_minutes),
+         borderColor: colors.warn, borderWidth: 3, yAxisID: 'y', tension: 0.25},
+        pointStylesFor('avg_frt_minutes', labels, anomalyMap, colors.warn)),
+      Object.assign(
+        {label: 'MTTR (А), ч', data: seriesA.map(p => p.avg_mttr_hours),
+         borderColor: colors.bad, borderWidth: 3, yAxisID: 'y1', tension: 0.25},
+        pointStylesFor('avg_mttr_hours', labels, anomalyMap, colors.bad)),
     ];
     if (seriesB) {
       timesDatasets.push(
@@ -467,18 +519,25 @@
         `не обнаружено. Метрики в пределах обычной вариации.</span>`;
       return;
     }
-    anomaliesEl.innerHTML = payload.anomalies.map(a => {
+    // Сортируем по дате (свежие сверху), при равенстве — по убыванию |Z|.
+    const sorted = payload.anomalies.slice().sort((a, b) => {
+      if (a.bucket_date !== b.bucket_date) return a.bucket_date < b.bucket_date ? 1 : -1;
+      return Math.abs(b.z_score) - Math.abs(a.z_score);
+    });
+    const header = `<div class="muted" style="margin-bottom:6px">` +
+      `Обнаружено отклонений: <b>${sorted.length}</b>. ` +
+      `Точки этих дней подсвечены на линейных графиках.</div>`;
+    anomaliesEl.innerHTML = header + sorted.map(a => {
       const info = METRIC_INFO[a.metric] || {label: a.metric, kind: 'int'};
       const isUp = a.value > a.mean;
       const arrow = isUp ? '▲' : '▼';
-      // Серьёзность отклонения: |Z| ≥ 3 — критическая, иначе предупреждение.
       const cls = Math.abs(a.z_score) >= 3 ? '' : 'anomaly--warn';
       const verb = isUp ? 'выше' : 'ниже';
       return `<div class="anomaly ${cls}">
         ${arrow} <b>${info.label}</b> · ${a.bucket_date}:
         текущее значение <b>${fmtMetric(info.kind, a.value)}</b>,
         что заметно ${verb} обычного
-        (среднее за период ≈ ${fmtMetric(info.kind, a.mean)}).
+        (среднее по предыдущим суткам ≈ ${fmtMetric(info.kind, a.mean)}).
       </div>`;
     }).join('');
   }
@@ -513,7 +572,7 @@
           fetchJson('anomalies'),
         ]);
         renderKpis(cmp.a.summary, defaults.sla_frt_minutes, defaults.sla_mttr_hours, cmp.delta);
-        buildCharts(cmp.a, cmp);
+        buildCharts(cmp.a, cmp, anomalies.anomalies);
         renderAnomalies(anomalies);
         renderStatus(cmp.last_worker_run);
         showCompareHint(cmp);
@@ -523,7 +582,7 @@
           fetchJson('anomalies'),
         ]);
         renderKpis(dashboard.summary, defaults.sla_frt_minutes, defaults.sla_mttr_hours, null);
-        buildCharts(dashboard, null);
+        buildCharts(dashboard, null, anomalies.anomalies);
         renderAnomalies(anomalies);
         renderStatus(dashboard.last_worker_run);
         showCompareHint(null);
