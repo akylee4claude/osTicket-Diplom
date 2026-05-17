@@ -189,7 +189,22 @@
             <input type="date" name="to2">
         </label>
         <button type="submit" class="action-button"><?= __('Применить') ?></button>
-        <a class="action-button" id="ost-analytics-export" href="#"><?= __('Экспорт CSV') ?></a>
+        <label>
+            <?= __('Формат') ?>
+            <select id="ost-analytics-export-format">
+                <option value="csv">CSV</option>
+                <option value="xlsx">Excel (XLSX)</option>
+                <option value="pdf">PDF</option>
+            </select>
+        </label>
+        <label id="ost-analytics-export-kind-label">
+            <?= __('Данные') ?>
+            <select id="ost-analytics-export-kind">
+                <option value="agg"><?= __('Агрегаты (KPI по дням)') ?></option>
+                <option value="tickets"><?= __('Сырые тикеты') ?></option>
+            </select>
+        </label>
+        <a class="action-button" id="ost-analytics-export" href="#"><?= __('Скачать') ?></a>
     </form>
     <div class="ost-analytics__compare-hint" id="ost-analytics-compare-hint" style="display:none"></div>
 
@@ -288,6 +303,29 @@
   const compareSel = document.getElementById('ost-analytics-compare');
   const compareHint = document.getElementById('ost-analytics-compare-hint');
   const compareRangeLabels = document.querySelectorAll('.ost-analytics__compare-range');
+  const exportFormatSel = document.getElementById('ost-analytics-export-format');
+  const exportKindSel = document.getElementById('ost-analytics-export-kind');
+  const exportKindLabel = document.getElementById('ost-analytics-export-kind-label');
+
+  function updateExportLink() {
+    const fmt = exportFormatSel.value;
+    const params = currentParams();
+    params.set('action', 'export.' + fmt);
+    // PDF — это «справка»: только агрегаты, поле «Данные» прячем.
+    if (fmt === 'pdf') {
+      exportKindLabel.style.display = 'none';
+    } else {
+      exportKindLabel.style.display = '';
+      params.set('kind', exportKindSel.value);
+    }
+    exportLink.href = `${apiBase}?${params.toString()}`;
+  }
+  exportFormatSel.addEventListener('change', updateExportLink);
+  exportKindSel.addEventListener('change', updateExportLink);
+  // Также пересчитываем href на лету при любом изменении формы фильтров,
+  // чтобы не пришлось всегда давить «Применить» перед скачиванием.
+  filtersForm.addEventListener('change', updateExportLink);
+  filtersForm.addEventListener('input', updateExportLink);
 
   // Показывать/прятать custom-инпуты периода Б в зависимости от выбора.
   function syncCompareUi() {
@@ -916,7 +954,7 @@
         renderStatus(dashboard.last_worker_run);
         showCompareHint(null);
       }
-      exportLink.href = `${apiBase}?action=export.csv&${currentParams().toString()}`;
+      updateExportLink();
     } catch (e) {
       console.error(e);
       kpisEl.innerHTML = `<div class="ost-analytics__kpi ost-analytics__kpi--bad">

@@ -48,6 +48,12 @@ switch ($action) {
     case 'export.csv':
         $api->exportCsv();
         break;
+    case 'export.xlsx':
+        $api->exportXlsx();
+        break;
+    case 'export.pdf':
+        $api->exportPdf();
+        break;
     case 'health':
         $api->health();
         break;
