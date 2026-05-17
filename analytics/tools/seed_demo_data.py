@@ -50,6 +50,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--wipe", action="store_true",
                    help="Delete all seeded tickets before generating new ones")
+    p.add_argument("--anomaly-spike", type=int, default=0, metavar="N",
+                   help="Дополнительно сгенерировать N просроченных заявок за "
+                        "последний день (сверх --tickets). Создаёт выраженный "
+                        "Z-выброс для демонстрации блока обнаружения аномалий.")
     return p.parse_args()
 
 
@@ -219,7 +223,35 @@ def generate(args) -> None:
             if (i + 1) % 500 == 0:
                 log.info("Inserted %d / %d tickets", i + 1, args.tickets)
 
-    log.info("Seeding done: %d tickets over %d days", args.tickets, args.days)
+        if args.anomaly_spike > 0:
+            spike_day = now.replace(hour=10, minute=0, second=0)
+            log.info("Generating anomaly spike: %d overdue tickets on %s",
+                     args.anomaly_spike, spike_day.date())
+            base = args.tickets
+            for j in range(args.anomaly_spike):
+                created = spike_day.replace(
+                    hour=random.randint(9, 18),
+                    minute=random.randint(0, 59),
+                    second=random.randint(0, 59),
+                )
+                frt_minutes = max(1, int(random.lognormvariate(4.5, 0.6)))  # выше обычного
+                first_response = created + timedelta(minutes=frt_minutes)
+                # Все заявки спайка просрочены и открыты — это и порождает выброс.
+                staff_id = random.choice(staff_ids + [0] * 2)
+                dept_id = random.choice(depts)
+                number = f"SEED-{base + j + 1:06d}"
+                ticket_id = insert_ticket(conn, args.prefix, created=created,
+                                          status_id=open_status.id, dept_id=dept_id,
+                                          staff_id=staff_id, closed_at=None,
+                                          first_response_at=first_response,
+                                          isoverdue=1, number=number)
+                thread_id = insert_thread(conn, args.prefix, ticket_id, created, first_response)
+                insert_message(conn, args.prefix, thread_id, created, "Spike incident")
+                if staff_id != 0:
+                    insert_response(conn, args.prefix, thread_id, staff_id, first_response)
+
+    log.info("Seeding done: %d tickets over %d days%s", args.tickets, args.days,
+             f" (+{args.anomaly_spike} spike)" if args.anomaly_spike else "")
 
 
 def _hour_weights() -> list[int]:

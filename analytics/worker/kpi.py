@@ -49,29 +49,39 @@ def sla_compliance(values: pd.Series, threshold: float) -> float | None:
     return round(float(ok) / float(len(cleaned)) * 100.0, 2)
 
 
-def status_distribution(
-    tickets: pd.DataFrame, statuses: pd.DataFrame
-) -> dict[str, int]:
-    """Count of tickets per status name."""
+def status_distribution(tickets: pd.DataFrame) -> dict[str, int]:
+    """Бизнес-разбиение заявок на четыре категории за период.
+
+    Раньше эта функция группировала по `ost_ticket_status.name` (часто это
+    английские «Open» / «Closed» / «Resolved», которые руководство
+    игнорирует). Вместо этого разносим тикеты по комбинациям
+    isclosed × isoverdue — получаем четыре естественных бакета,
+    которые читаются с одного взгляда: «Открыта», «Открыта, просрочена»,
+    «Закрыта», «Закрыта с просрочкой». Пустые категории не попадают
+    в результат, чтобы они не загромождали круговую диаграмму.
+    """
     if tickets.empty:
         return {}
-    merged = tickets.merge(
-        statuses.rename(columns={"id": "status_id", "name": "status_name"}),
-        on="status_id",
-        how="left",
-    )
-    merged["status_name"] = merged["status_name"].fillna("Unknown")
-    return merged.groupby("status_name")["ticket_id"].count().astype(int).to_dict()
+    is_closed = tickets["closed"].notna()
+    is_overdue = tickets["isoverdue"].fillna(0).astype(int) == 1
+
+    buckets = {
+        "Открыта": int((~is_closed & ~is_overdue).sum()),
+        "Открыта, просрочена": int((~is_closed & is_overdue).sum()),
+        "Закрыта": int((is_closed & ~is_overdue).sum()),
+        "Закрыта с просрочкой": int((is_closed & is_overdue).sum()),
+    }
+    return {k: v for k, v in buckets.items() if v > 0}
 
 
 def agent_load(tickets: pd.DataFrame, staff: pd.DataFrame) -> dict[str, int]:
-    """Number of tickets assigned per staff member (`Unassigned` for staff_id=0)."""
+    """Количество назначенных тикетов на сотрудника (`Не назначено` для staff_id=0)."""
     if tickets.empty:
         return {}
     merged = tickets.merge(staff, on="staff_id", how="left")
     merged["full_name"] = merged["full_name"].where(
-        merged["staff_id"] != 0, other="Unassigned"
-    ).fillna(f"Staff#unknown")
+        merged["staff_id"] != 0, other="Не назначено"
+    ).fillna("Сотрудник не найден")
     return merged.groupby("full_name")["ticket_id"].count().astype(int).to_dict()
 
 
@@ -118,7 +128,7 @@ def daily_buckets(
             "sla_frt_percent": sla_compliance(day_df["frt_minutes"], sla_frt_minutes),
             "sla_mttr_percent": sla_compliance(day_df["resolution_minutes"], sla_mttr_minutes),
             "agent_load": agent_load(day_df, staff),
-            "status_distribution": status_distribution(day_df, statuses),
+            "status_distribution": status_distribution(day_df),
             "department_load": department_load(day_df, departments),
         }
         buckets.append(bucket_payload)

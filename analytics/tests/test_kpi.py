@@ -86,16 +86,21 @@ def test_sla_compliance_all_null():
     assert sla_compliance(pd.Series([None, None]), threshold=10) is None
 
 
-def test_status_distribution(tickets, statuses):
-    dist = status_distribution(tickets, statuses)
-    assert dist == {"Open": 3, "Pending": 1}
+def test_status_distribution(tickets):
+    # Из четырёх тикетов:
+    #   1 — closed, не просрочен  → «Закрыта»
+    #   2 — открыт, просрочен      → «Открыта, просрочена»
+    #   3 — closed, не просрочен  → «Закрыта»
+    #   4 — открыт, не просрочен   → «Открыта»
+    dist = status_distribution(tickets)
+    assert dist == {"Закрыта": 2, "Открыта": 1, "Открыта, просрочена": 1}
 
 
 def test_agent_load_marks_unassigned(tickets, staff):
     load = agent_load(tickets, staff)
     assert load["Иванов Иван"] == 2
     assert load["Петров Пётр"] == 1
-    assert load["Unassigned"] == 1
+    assert load["Не назначено"] == 1
 
 
 def test_department_load_unknown_bucket(tickets, departments):

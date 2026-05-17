@@ -161,7 +161,7 @@
             </div>
         </div>
         <div class="ost-analytics__panel">
-            <h4><?= __('Статус воркера') ?></h4>
+            <h4><?= __('Статус фоновой агрегации') ?></h4>
             <div id="ost-analytics-status" class="ost-analytics__status muted">
                 <?= __('Загрузка…') ?>
             </div>
@@ -442,27 +442,58 @@
     });
   }
 
+  // Карта названий метрик в человеко-понятный вид для блока аномалий.
+  // Поле — формат вывода значения.
+  const METRIC_INFO = {
+    total_tickets:    {label: 'Количество заявок',           kind: 'int'},
+    opened_tickets:   {label: 'Открыто заявок',              kind: 'int'},
+    closed_tickets:   {label: 'Закрыто заявок',              kind: 'int'},
+    overdue_tickets:  {label: 'Просроченных заявок',         kind: 'int'},
+    avg_frt_minutes:  {label: 'Среднее время первого ответа',kind: 'minutes'},
+    avg_mttr_hours:   {label: 'Среднее время разрешения',    kind: 'hours'},
+    sla_frt_percent:  {label: 'SLA по времени ответа',       kind: 'pct'},
+    sla_mttr_percent: {label: 'SLA по времени разрешения',   kind: 'pct'},
+  };
+
+  function fmtMetric(kind, v) {
+    if (v == null) return '—';
+    if (kind === 'int') return Number(v).toLocaleString('ru-RU');
+    return fmt[kind] ? fmt[kind](v) : String(v);
+  }
+
   function renderAnomalies(payload) {
     if (!payload.anomalies || payload.anomalies.length === 0) {
-      anomaliesEl.innerHTML = `<span class="muted">Аномалий не обнаружено (Z ≥ ${payload.z}).</span>`;
+      anomaliesEl.innerHTML = `<span class="muted">За выбранный период резких отклонений ` +
+        `не обнаружено. Метрики в пределах обычной вариации.</span>`;
       return;
     }
     anomaliesEl.innerHTML = payload.anomalies.map(a => {
+      const info = METRIC_INFO[a.metric] || {label: a.metric, kind: 'int'};
+      const isUp = a.value > a.mean;
+      const arrow = isUp ? '▲' : '▼';
+      // Серьёзность отклонения: |Z| ≥ 3 — критическая, иначе предупреждение.
       const cls = Math.abs(a.z_score) >= 3 ? '' : 'anomaly--warn';
+      const verb = isUp ? 'выше' : 'ниже';
       return `<div class="anomaly ${cls}">
-        <b>${a.metric}</b> на ${a.bucket_date}: текущее <b>${a.value}</b>,
-        среднее ${a.mean}, σ=${a.std}, Z=${a.z_score}
+        ${arrow} <b>${info.label}</b> · ${a.bucket_date}:
+        текущее значение <b>${fmtMetric(info.kind, a.value)}</b>,
+        что заметно ${verb} обычного
+        (среднее за период ≈ ${fmtMetric(info.kind, a.mean)}).
       </div>`;
     }).join('');
   }
 
   function renderStatus(lastRun) {
     if (!lastRun) {
-      statusEl.innerHTML = '<span class="muted">Воркер ещё не отрабатывал. Проверьте контейнер <code>worker</code>.</span>';
+      statusEl.innerHTML = '<span class="muted">Фоновая агрегация ещё не запускалась. ' +
+        'Проверьте, что контейнер <code>worker</code> работает.</span>';
       return;
     }
     const payload = lastRun.payload || {};
-    statusEl.innerHTML = `Последний запуск: <code>${lastRun.ts}</code> · обработано ${payload.rows || '?'} тикетов · сохранено ${payload.buckets || '?'} день-бакетов.`;
+    const rows = payload.rows != null ? Number(payload.rows).toLocaleString('ru-RU') : '?';
+    const buckets = payload.buckets != null ? payload.buckets : '?';
+    statusEl.innerHTML = `Последний пересчёт: <code>${lastRun.ts}</code> · ` +
+      `обработано <b>${rows}</b> заявок · сохранено агрегатов за <b>${buckets}</b> суток.`;
   }
 
   function showCompareHint(payload) {
