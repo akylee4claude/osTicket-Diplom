@@ -64,27 +64,31 @@
     padding-bottom: 2px;
 }
 .ost-analytics__staff-label .select2-container .select2-selection__rendered {
-    line-height: 28px;
+    line-height: 26px;
     padding: 0 6px;
 }
 .ost-analytics__staff-label .select2-selection__choice {
-    font-size: 11px !important;
-    padding: 0 6px !important;
-    margin: 3px 3px 0 0 !important;
+    font-size: 10px !important;
+    padding: 0 4px !important;
+    margin: 4px 3px 0 0 !important;
     background: #eef4ff !important;
     border: 1px solid #c5d7f0 !important;
     border-radius: 3px !important;
-    line-height: 20px !important;
-    height: 22px !important;
+    line-height: 16px !important;
+    height: 18px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.02em;
+    color: #2c5894 !important;
 }
 .ost-analytics__staff-label .select2-selection__choice__remove {
-    margin-right: 4px !important;
+    margin-right: 3px !important;
     color: #6b7480 !important;
+    font-size: 11px !important;
 }
 .ost-analytics__staff-label .select2-search--inline .select2-search__field {
-    margin-top: 3px !important;
-    height: 22px;
-    font-size: 12px;
+    margin-top: 4px !important;
+    height: 18px;
+    font-size: 11px;
 }
 .ost-analytics__staff-label option.is-hidden { display: none; }
 
