@@ -58,27 +58,54 @@ class Api {
         ]);
     }
 
-    /**
-     * Возвращает суточные строки KPI с учётом фильтров staff_id/dept_id.
-     * Когда фильтр отсутствует — берём готовые агрегаты из БД (быстрее).
-     * Когда фильтр есть — пересчитываем на лету по `ost_ticket`.
-     */
-    private function rowsFor(\DateTimeInterface $from, \DateTimeInterface $to): array {
-        $staffId = isset($_GET['staff_id']) ? (int) $_GET['staff_id'] : 0;
-        $deptId  = isset($_GET['dept_id'])  ? (int) $_GET['dept_id']  : 0;
-        if ($staffId > 0 || $deptId > 0) {
-            [$slaFrt, $slaMttr] = $this->slaThresholds();
-            return Repository::computeFiltered($from, $to, $staffId ?: null, $deptId ?: null,
-                                               $slaFrt, $slaMttr);
-        }
-        return Repository::dailyRange($from, $to);
+    private function activeFilter(): array {
+        return $this->effectiveFilter();
     }
 
-    private function activeFilter(): array {
+    /**
+     * Фильтр, который БУДЕТ применён, с учётом роли (ТЗ 4.4.5).
+     *
+     * - admin / manager: берём то, что пришло в $_GET (staff_id/dept_id).
+     * - agent: жёстко форсим staff_id = собственный id. Параметры
+     *   запроса игнорируются — это «defense in depth»: даже если UI
+     *   подаст другой staff_id (вручную через URL, через DevTools и т.п.),
+     *   backend всё равно вернёт только данные этого агента.
+     *
+     * Поле `locked` сигналит фронту, что фильтр не редактируем —
+     * UI-этап (3) использует его, чтобы прятать/блокировать селекты.
+     */
+    private function effectiveFilter(): array {
+        $role = $this->currentRole();
+        if ($role === 'agent') {
+            global $thisstaff;
+            return [
+                'staff_id' => (int) $thisstaff->getId(),
+                'dept_id'  => 0,
+                'locked'   => true,
+                'role'     => 'agent',
+            ];
+        }
         return [
             'staff_id' => isset($_GET['staff_id']) ? (int) $_GET['staff_id'] : 0,
             'dept_id'  => isset($_GET['dept_id'])  ? (int) $_GET['dept_id']  : 0,
+            'locked'   => false,
+            'role'     => $role,
         ];
+    }
+
+    /**
+     * Возвращает суточные строки KPI с учётом фильтра. Когда фильтра нет —
+     * берём готовые агрегаты, когда есть (включая принудительный фильтр
+     * у агента) — пересчитываем по `ost_ticket`.
+     */
+    private function rowsFor(\DateTimeInterface $from, \DateTimeInterface $to): array {
+        $f = $this->effectiveFilter();
+        if ($f['staff_id'] > 0 || $f['dept_id'] > 0) {
+            [$slaFrt, $slaMttr] = $this->slaThresholds();
+            return Repository::computeFiltered($from, $to,
+                $f['staff_id'] ?: null, $f['dept_id'] ?: null, $slaFrt, $slaMttr);
+        }
+        return Repository::dailyRange($from, $to);
     }
 
     /**
@@ -133,6 +160,7 @@ class Api {
             ],
             'delta' => self::computeDelta($sumA, $sumB),
             'last_worker_run' => Repository::lastWorkerRun(),
+            'filter' => $this->effectiveFilter(),
         ]);
     }
 
@@ -150,17 +178,40 @@ class Api {
             return $this->json(['error' => 'bad date'], 400);
         }
         $metric = isset($_GET['metric']) ? (string) $_GET['metric'] : null;
+        $f = $this->effectiveFilter();
 
-        $ctx = Repository::bucketWithContext($date, 7);
-        $tickets = Repository::ticketsForDay($date, 200);
+        if ($f['staff_id'] > 0 || $f['dept_id'] > 0) {
+            // Фильтр активен (агент или manager/admin с фильтром): бакет и
+            // 7-дневный контекст считаем на лету. Берём окно [date-7..date],
+            // последний день = $bucket, остальные — $context.
+            [$slaFrt, $slaMttr] = $this->slaThresholds();
+            $tz = new \DateTimeZone(date_default_timezone_get());
+            $target = new \DateTimeImmutable($date, $tz);
+            $start  = $target->modify('-7 days');
+            $rows = Repository::computeFiltered($start, $target,
+                $f['staff_id'] ?: null, $f['dept_id'] ?: null, $slaFrt, $slaMttr);
+            $bucket = null; $context = [];
+            foreach ($rows as $r) {
+                if ($r['bucket_date'] === $date) $bucket = $r;
+                else $context[] = $r;
+            }
+        } else {
+            $ctx = Repository::bucketWithContext($date, 7);
+            $bucket = $ctx['bucket'];
+            $context = $ctx['context'];
+        }
+
+        $tickets = Repository::ticketsForDay($date, 200,
+            $f['staff_id'] ?: null, $f['dept_id'] ?: null);
 
         return $this->json([
             'date' => $date,
             'metric' => $metric,
-            'bucket' => $ctx['bucket'],
-            'context' => $ctx['context'],
+            'bucket' => $bucket,
+            'context' => $context,
             'tickets' => $tickets,
             'tickets_truncated' => count($tickets) === 200,
+            'filter' => $f,
         ]);
     }
 
@@ -168,12 +219,16 @@ class Api {
         if (!$this->access()) return $this->json(['error' => 'forbidden'], 403);
 
         [$from, $to] = $this->resolvePeriod();
-        $rows = Repository::dailyRange($from, $to);
+        // Используем rowsFor(), а не Repository::dailyRange напрямую: так
+        // аномалии у агента будут считаться по его собственным сериям, у
+        // руководителя/админа — с учётом выбранного в UI staff/dept фильтра.
+        $rows = $this->rowsFor($from, $to);
         $z = isset($_GET['z']) ? (float)$_GET['z'] : 2.0;
         return $this->json([
             'period' => ['from' => $from->format('Y-m-d'), 'to' => $to->format('Y-m-d')],
             'z' => $z,
             'anomalies' => Repository::detectAnomalies($rows, $z),
+            'filter' => $this->effectiveFilter(),
         ]);
     }
 
