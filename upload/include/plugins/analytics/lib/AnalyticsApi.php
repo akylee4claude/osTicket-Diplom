@@ -12,13 +12,30 @@ class Api {
     }
 
     /**
+     * Ролевая модель плагина (ТЗ 4.4.5):
+     *   - 'admin'   — полный администратор osTicket; видит всё + админ-блок
+     *   - 'manager' — руководитель своего департамента (isManager()); видит
+     *                 всех сотрудников, но без доступа к настройкам/логам
+     *   - 'agent'   — рядовой агент; данные ограничены своими тикетами
+     *
+     * Возвращаем 'guest' если staff отсутствует (на случай, если access()
+     * не успел отработать выше по стеку).
+     */
+    public function currentRole(): string {
+        global $thisstaff;
+        if (!$thisstaff || !$thisstaff->getId()) return 'guest';
+        if (method_exists($thisstaff, 'isAdmin')   && $thisstaff->isAdmin())   return 'admin';
+        if (method_exists($thisstaff, 'isManager') && $thisstaff->isManager()) return 'manager';
+        return 'agent';
+    }
+
+    /**
      * Доступ к административным методам (журнал, триггер пересчёта) —
      * только полные администраторы osTicket. Соответствует ТЗ 4.4.5
      * («администратор видит все настройки и логи»).
      */
     public function adminAccess(): bool {
-        global $thisstaff;
-        return $this->access() && $thisstaff->isAdmin();
+        return $this->currentRole() === 'admin';
     }
 
     public function dashboard() {

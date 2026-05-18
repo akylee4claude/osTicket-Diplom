@@ -1,9 +1,12 @@
 <?php
-/** @var array  $defaults  */
-/** @var string $apiBase   */
-/** @var bool   $isAdmin   */
-/** @var array  $staffList */
-/** @var array  $deptList  */
+/** @var array  $defaults         */
+/** @var string $apiBase          */
+/** @var bool   $isAdmin          */
+/** @var string $role             */
+/** @var int    $currentStaffId   */
+/** @var string $currentStaffName */
+/** @var array  $staffList        */
+/** @var array  $deptList         */
 ?>
 <style>
 .ost-analytics { margin: 4px 0 24px; color: #222; }
@@ -15,6 +18,15 @@
 .ost-analytics__back { font-size: 13px; color: #2c8aff; text-decoration: none;
     display: inline-flex; align-items: center; gap: 4px; }
 .ost-analytics__back:hover { text-decoration: underline; }
+.ost-analytics__role {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 3px 10px; border-radius: 12px; line-height: 1.4;
+}
+.ost-analytics__role--admin   { background: #fde9e7; color: #a02524; }
+.ost-analytics__role--manager { background: #fff1de; color: #a35a14; }
+.ost-analytics__role--agent   { background: #e6f5ec; color: #1e7a3f; }
+.ost-analytics__role-meta { font-size: 11px; color: #6b7480; }
 
 .ost-analytics__filters {
     display: flex; flex-wrap: wrap; align-items: end; gap: 14px;
@@ -173,14 +185,31 @@
 .ost-modal__list li { margin: 2px 0; }
 </style>
 
+<?php
+$roleLabels = [
+    'admin'   => __('Администратор'),
+    'manager' => __('Руководитель'),
+    'agent'   => __('Агент'),
+];
+$roleLabel = $roleLabels[$role ?? 'agent'] ?? __('Гость');
+?>
 <div class="ost-analytics__head">
     <h2 class="ost-analytics__title">
         <i class="icon-bar-chart"></i>
         <?= __('Аналитика и дашборды') ?>
     </h2>
-    <a class="ost-analytics__back" href="<?= ROOT_PATH ?>scp/index.php">
-        <i class="icon-chevron-left"></i> <?= __('Назад к панели') ?>
-    </a>
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <span class="ost-analytics__role ost-analytics__role--<?= htmlspecialchars($role ?? 'agent', ENT_QUOTES, 'UTF-8') ?>"
+              title="<?= __('Роль определяется правами в osTicket. Влияет на состав показанных данных.') ?>">
+            <?= htmlspecialchars($roleLabel, ENT_QUOTES, 'UTF-8') ?>
+        </span>
+        <?php if (!empty($currentStaffName)): ?>
+            <span class="ost-analytics__role-meta"><?= htmlspecialchars($currentStaffName, ENT_QUOTES, 'UTF-8') ?></span>
+        <?php endif; ?>
+        <a class="ost-analytics__back" href="<?= ROOT_PATH ?>scp/index.php">
+            <i class="icon-chevron-left"></i> <?= __('Назад к панели') ?>
+        </a>
+    </div>
 </div>
 
 <div class="ost-analytics" data-api="<?= htmlspecialchars($apiBase) ?>"

@@ -3,6 +3,7 @@
 namespace Analytics;
 
 require_once __DIR__ . '/AnalyticsRepository.php';
+require_once __DIR__ . '/AnalyticsApi.php';
 
 /**
  * Renders the dashboard HTML shell. Data is fetched by the browser from
@@ -31,7 +32,11 @@ class Controller {
         ];
 
         $apiBase = (defined('ROOT_PATH') ? ROOT_PATH : '/') . 'scp/apps/analytics.php';
-        $isAdmin = $thisstaff && method_exists($thisstaff, 'isAdmin') && $thisstaff->isAdmin();
+        $role = (new Api())->currentRole();   // 'admin' | 'manager' | 'agent'
+        $isAdmin = $role === 'admin';
+        $currentStaffId = $thisstaff ? (int) $thisstaff->getId() : 0;
+        $currentStaffName = $thisstaff && method_exists($thisstaff, 'getName')
+            ? (string) $thisstaff->getName() : '';
         $staffList = Repository::allStaff();
         $deptList  = Repository::allDepartments();
 
