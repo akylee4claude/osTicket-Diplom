@@ -23,10 +23,12 @@ UPSERT_DAILY = """
 INSERT INTO `analytics_daily_stats` (
     bucket_date, total_tickets, opened_tickets, closed_tickets, overdue_tickets,
     avg_frt_minutes, avg_mttr_hours, sla_frt_percent, sla_mttr_percent,
+    fcr_percent, csat_score,
     agent_load, status_distribution, department_load
 ) VALUES (
     :bucket_date, :total_tickets, :opened_tickets, :closed_tickets, :overdue_tickets,
     :avg_frt_minutes, :avg_mttr_hours, :sla_frt_percent, :sla_mttr_percent,
+    :fcr_percent, :csat_score,
     :agent_load, :status_distribution, :department_load
 )
 ON DUPLICATE KEY UPDATE
@@ -38,6 +40,8 @@ ON DUPLICATE KEY UPDATE
     avg_mttr_hours      = VALUES(avg_mttr_hours),
     sla_frt_percent     = VALUES(sla_frt_percent),
     sla_mttr_percent    = VALUES(sla_mttr_percent),
+    fcr_percent         = VALUES(fcr_percent),
+    csat_score          = VALUES(csat_score),
     agent_load          = VALUES(agent_load),
     status_distribution = VALUES(status_distribution),
     department_load     = VALUES(department_load)

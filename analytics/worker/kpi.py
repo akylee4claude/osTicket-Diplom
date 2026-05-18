@@ -49,6 +49,38 @@ def sla_compliance(values: pd.Series, threshold: float) -> float | None:
     return round(float(ok) / float(len(cleaned)) * 100.0, 2)
 
 
+def fcr_percent(tickets: pd.DataFrame) -> float | None:
+    """First Call Resolution (ТЗ 4.4.9): % закрытых тикетов без переоткрытий.
+
+    Учитываем только тикеты с непустым `closed` (для открытых FCR не определён).
+    Числитель — closed без значения в `reopened`. Если закрытых нет → None.
+    """
+    if tickets.empty or "closed" not in tickets.columns:
+        return None
+    closed = tickets[tickets["closed"].notna()]
+    if closed.empty:
+        return None
+    if "reopened" not in closed.columns:
+        return 100.0  # данных о переоткрытии нет — считаем по верхней границе
+    reopened = int(closed["reopened"].notna().sum())
+    fcr = (len(closed) - reopened) / float(len(closed)) * 100.0
+    return round(fcr, 2)
+
+
+def csat_score(tickets: pd.DataFrame) -> float | None:
+    """Customer Satisfaction Score (ТЗ 4.4.9): средняя оценка по шкале 1..5.
+
+    Считаем по непустым `csat_score`. Если оценок нет → None (на дашборде
+    карточка покажет «—»).
+    """
+    if tickets.empty or "csat_score" not in tickets.columns:
+        return None
+    scores = tickets["csat_score"].dropna()
+    if scores.empty:
+        return None
+    return round(float(scores.mean()), 2)
+
+
 def status_distribution(tickets: pd.DataFrame) -> dict[str, int]:
     """Бизнес-разбиение заявок на четыре категории за период.
 
@@ -127,6 +159,8 @@ def daily_buckets(
             "avg_mttr_hours": avg_resolution_hours(day_df),
             "sla_frt_percent": sla_compliance(day_df["frt_minutes"], sla_frt_minutes),
             "sla_mttr_percent": sla_compliance(day_df["resolution_minutes"], sla_mttr_minutes),
+            "fcr_percent": fcr_percent(day_df),
+            "csat_score": csat_score(day_df),
             "agent_load": agent_load(day_df, staff),
             "status_distribution": status_distribution(day_df),
             "department_load": department_load(day_df, departments),
@@ -186,6 +220,8 @@ __all__ = [
     "avg_first_response",
     "avg_resolution_hours",
     "sla_compliance",
+    "fcr_percent",
+    "csat_score",
     "status_distribution",
     "agent_load",
     "department_load",

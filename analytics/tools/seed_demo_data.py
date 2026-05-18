@@ -54,6 +54,11 @@ def parse_args() -> argparse.Namespace:
                    help="Дополнительно сгенерировать N просроченных заявок за "
                         "последний день (сверх --tickets). Создаёт выраженный "
                         "Z-выброс для демонстрации блока обнаружения аномалий.")
+    p.add_argument("--with-csat", action="store_true",
+                   help="Сгенерировать синтетические оценки CSAT (1..5) для "
+                        "≈70%% закрытых тикетов. По умолчанию распределение "
+                        "смещено в сторону 4–5; нужно для демонстрации карточки "
+                        "CSAT на дашборде (в дефолтной osTicket такого источника нет).")
     return p.parse_args()
 
 
@@ -100,6 +105,13 @@ def insert_ticket(conn, prefix: str, *, created: datetime, status_id: int,
                    first_response_at: datetime | None, isoverdue: int, number: str) -> int:
     last_update = closed_at or first_response_at or created
     duedate = created + timedelta(hours=random.choice([4, 8, 24, 48, 72]))
+    # Иногда (≈12% закрытых) проставляем reopened — это нужно для нетривиального
+    # FCR на дашборде. Время переоткрытия между first_response и closed.
+    reopened_at = None
+    if closed_at and first_response_at and random.random() < 0.12:
+        delta = (closed_at - first_response_at).total_seconds()
+        if delta > 60:
+            reopened_at = first_response_at + timedelta(seconds=random.uniform(60, max(60, delta - 60)))
     res = conn.execute(text(f"""
         INSERT INTO `{prefix}ticket` (
             number, user_id, user_email_id, status_id, dept_id, sla_id, topic_id,
@@ -109,7 +121,7 @@ def insert_ticket(conn, prefix: str, *, created: datetime, status_id: int,
         ) VALUES (
             :number, 0, 0, :status_id, :dept_id, 0, 0, :staff_id, 0, 0, 0, 0, 0,
             '127.0.0.1', 'API', :isoverdue,
-            :isanswered, :duedate, :duedate, NULL, :closed,
+            :isanswered, :duedate, :duedate, :reopened, :closed,
             :lastupdate, :created, :lastupdate
         )
     """), {
@@ -120,6 +132,7 @@ def insert_ticket(conn, prefix: str, *, created: datetime, status_id: int,
         "isoverdue": isoverdue,
         "isanswered": 1 if first_response_at else 0,
         "duedate": duedate,
+        "reopened": reopened_at,
         "closed": closed_at,
         "lastupdate": last_update,
         "created": created,
@@ -252,6 +265,46 @@ def generate(args) -> None:
 
     log.info("Seeding done: %d tickets over %d days%s", args.tickets, args.days,
              f" (+{args.anomaly_spike} spike)" if args.anomaly_spike else "")
+
+    if args.with_csat:
+        seed_csat(args.prefix)
+
+
+def seed_csat(prefix: str) -> None:
+    """Заливает синтетические CSAT-оценки в analytics_ticket_csat для ~70%
+    закрытых SEED-тикетов. Распределение: 5→55%, 4→25%, 3→10%, 2→6%, 1→4%
+    (среднее ~4.21). Существующие оценки не трогаются (ON DUPLICATE KEY UPDATE
+    не используем — ужесточённая UNIQUE-проверка).
+    """
+    log.info("Seeding synthetic CSAT scores for closed seed tickets")
+    settings = config.load()
+    engine = make_engine(settings)
+    weights = [(5, 55), (4, 25), (3, 10), (2, 6), (1, 4)]
+    pool = []
+    for score, w in weights:
+        pool.extend([score] * w)
+
+    with engine.begin() as conn:
+        # Берём только закрытые тикеты, у которых ещё нет оценки.
+        rows = conn.execute(text(f"""
+            SELECT t.ticket_id
+            FROM `{prefix}ticket` t
+            LEFT JOIN `analytics_ticket_csat` csat ON csat.ticket_id = t.ticket_id
+            WHERE t.source = 'API' AND t.number LIKE 'SEED-%'
+              AND t.closed IS NOT NULL
+              AND csat.id IS NULL
+        """)).scalars().all()
+
+        inserted = 0
+        for ticket_id in rows:
+            if random.random() > 0.7:
+                continue
+            score = random.choice(pool)
+            conn.execute(text("""
+                INSERT INTO `analytics_ticket_csat` (ticket_id, score) VALUES (:tid, :score)
+            """), {"tid": int(ticket_id), "score": int(score)})
+            inserted += 1
+        log.info("Inserted CSAT scores for %d tickets", inserted)
 
 
 def _hour_weights() -> list[int]:

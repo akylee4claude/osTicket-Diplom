@@ -31,6 +31,8 @@ class Queries:
                 t.closed,
                 t.created,
                 t.lastupdate,
+                t.reopened,
+                csat.score AS csat_score,
                 (
                     SELECT MIN(te.created)
                     FROM `{p}thread` th
@@ -53,6 +55,7 @@ class Queries:
                 )) AS frt_minutes,
                 TIMESTAMPDIFF(MINUTE, t.created, t.closed) AS resolution_minutes
             FROM `{p}ticket` t
+            LEFT JOIN `analytics_ticket_csat` csat ON csat.ticket_id = t.ticket_id
             WHERE t.created >= :date_from
               AND t.created <  :date_to
         """

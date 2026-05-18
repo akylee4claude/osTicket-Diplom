@@ -365,6 +365,7 @@
     minutes: (v) => v == null ? '—' : `${Number(v).toFixed(1)} мин`,
     hours: (v) => v == null ? '—' : `${Number(v).toFixed(1)} ч`,
     pct: (v) => v == null ? '—' : `${Number(v).toFixed(1)} %`,
+    score: (v) => v == null ? '—' : `${Number(v).toFixed(2)} / 5`,
   };
 
   const colors = {
@@ -450,7 +451,8 @@
 
   // Для каких метрик рост — улучшение, для каких — ухудшение.
   // Используется для раскраски дельт в режиме сравнения периодов.
-  const DELTA_BETTER_WHEN_UP = new Set(['closed_tickets', 'sla_frt_percent', 'sla_mttr_percent']);
+  const DELTA_BETTER_WHEN_UP = new Set(['closed_tickets', 'sla_frt_percent', 'sla_mttr_percent',
+                                         'fcr_percent', 'csat_score']);
   const DELTA_BETTER_WHEN_DOWN = new Set(['overdue_tickets', 'avg_frt_minutes', 'avg_mttr_hours']);
 
   function deltaHtml(metric, delta) {
@@ -486,6 +488,13 @@
            `Порог ${frtSla} мин`, slaClass(s.sla_frt_percent, 90), 'sla_frt_percent'),
       card('SLA по MTTR', fmt.pct(s.sla_mttr_percent),
            `Порог ${mttrSla} ч`, slaClass(s.sla_mttr_percent, 90), 'sla_mttr_percent'),
+      card('FCR', fmt.pct(s.fcr_percent),
+           'Решено без переоткрытия', slaClass(s.fcr_percent, 65), 'fcr_percent'),
+      card('CSAT', fmt.score(s.csat_score),
+           'Оценка клиентов (1..5)',
+           s.csat_score == null ? 'accent'
+             : (s.csat_score >= 4.5 ? 'ok' : (s.csat_score >= 3.5 ? 'warn' : 'bad')),
+           'csat_score'),
     ].join('');
   }
 
@@ -692,6 +701,8 @@
     avg_mttr_hours:   {label: 'Среднее время разрешения',    kind: 'hours'},
     sla_frt_percent:  {label: 'SLA по времени ответа',       kind: 'pct'},
     sla_mttr_percent: {label: 'SLA по времени разрешения',   kind: 'pct'},
+    fcr_percent:      {label: 'FCR (без переоткрытий)',      kind: 'pct'},
+    csat_score:       {label: 'CSAT (оценка клиентов)',      kind: 'score'},
   };
 
   function fmtMetric(kind, v) {
@@ -914,6 +925,8 @@
       ['avg_mttr_hours',   'Среднее MTTR'],
       ['sla_frt_percent',  'SLA по FRT'],
       ['sla_mttr_percent', 'SLA по MTTR'],
+      ['fcr_percent',      'FCR'],
+      ['csat_score',       'CSAT'],
     ];
     const kpiHtml = kpiList.map(([key, label]) => {
       const info = METRIC_INFO[key] || {kind: 'int'};

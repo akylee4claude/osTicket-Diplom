@@ -71,6 +71,8 @@ class Repository {
             SELECT
                 DATE(t.created) AS bucket_date,
                 t.ticket_id, t.closed, t.isoverdue, t.staff_id, t.dept_id, t.status_id,
+                t.reopened,
+                csat.score AS csat_score,
                 COALESCE(NULLIF(TRIM(CONCAT(s.firstname,' ',s.lastname)),''),
                          IF(t.staff_id=0,'Не назначено','—')) AS staff_name,
                 d.name AS dept_name,
@@ -87,6 +89,7 @@ class Repository {
             FROM `{$prefix}ticket` t
             LEFT JOIN `{$prefix}staff` s         ON s.staff_id = t.staff_id
             LEFT JOIN `{$prefix}department` d    ON d.id       = t.dept_id
+            LEFT JOIN `analytics_ticket_csat` csat ON csat.ticket_id = t.ticket_id
             WHERE $whereSql
         ";
 
@@ -107,6 +110,8 @@ class Repository {
             $opened = 0; $closed = 0; $overdue = 0;
             $frts = []; $mttrs = [];
             $slaFrtOk = 0; $slaMttrOk = 0;
+            $fcrClosed = 0; $fcrNoReopen = 0;
+            $csatScores = [];
             $agentLoad = []; $statusDist = []; $deptLoad = [];
 
             foreach ($tickets as $t) {
@@ -124,6 +129,14 @@ class Repository {
                     $m = (float) $t['resolution_minutes'];
                     $mttrs[] = $m;
                     if ($m <= $slaMttrMin) $slaMttrOk++;
+                }
+                // FCR — только по закрытым; ни разу не переоткрывался — числитель.
+                if ($isClosed) {
+                    $fcrClosed++;
+                    if (empty($t['reopened'])) $fcrNoReopen++;
+                }
+                if ($t['csat_score'] !== null && $t['csat_score'] !== '') {
+                    $csatScores[] = (float) $t['csat_score'];
                 }
                 $agentLoad[$t['staff_name']] = ($agentLoad[$t['staff_name']] ?? 0) + 1;
                 $statusKey = $isClosed
@@ -144,6 +157,8 @@ class Repository {
                 'avg_mttr_hours'     => $mttrs ? round((array_sum($mttrs) / count($mttrs)) / 60.0, 2) : null,
                 'sla_frt_percent'    => $frts  ? round($slaFrtOk * 100.0 / count($frts), 2) : null,
                 'sla_mttr_percent'   => $mttrs ? round($slaMttrOk * 100.0 / count($mttrs), 2) : null,
+                'fcr_percent'        => $fcrClosed ? round($fcrNoReopen * 100.0 / $fcrClosed, 2) : null,
+                'csat_score'         => $csatScores ? round(array_sum($csatScores) / count($csatScores), 2) : null,
                 'agent_load'         => $agentLoad,
                 'status_distribution'=> $statusDist,
                 'department_load'    => $deptLoad,
@@ -156,7 +171,7 @@ class Repository {
         $sql = sprintf(
             "SELECT bucket_date, total_tickets, opened_tickets, closed_tickets,
                     overdue_tickets, avg_frt_minutes, avg_mttr_hours,
-                    sla_frt_percent, sla_mttr_percent,
+                    sla_frt_percent, sla_mttr_percent, fcr_percent, csat_score,
                     agent_load, status_distribution, department_load
              FROM `analytics_daily_stats`
              WHERE bucket_date BETWEEN '%s' AND '%s'
@@ -188,6 +203,8 @@ class Repository {
                 'avg_mttr_hours' => null,
                 'sla_frt_percent' => null,
                 'sla_mttr_percent' => null,
+                'fcr_percent' => null,
+                'csat_score' => null,
                 'agent_load' => [],
                 'status_distribution' => [],
                 'department_load' => [],
@@ -227,6 +244,8 @@ class Repository {
             'avg_mttr_hours' => $weightedAvg('avg_mttr_hours'),
             'sla_frt_percent' => $weightedAvg('sla_frt_percent'),
             'sla_mttr_percent' => $weightedAvg('sla_mttr_percent'),
+            'fcr_percent' => $weightedAvg('fcr_percent'),
+            'csat_score' => $weightedAvg('csat_score'),
             'agent_load' => $mergeJson('agent_load'),
             'status_distribution' => $mergeJson('status_distribution'),
             'department_load' => $mergeJson('department_load'),

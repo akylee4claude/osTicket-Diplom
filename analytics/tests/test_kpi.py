@@ -7,9 +7,11 @@ from analytics.worker.kpi import (
     agent_load,
     avg_first_response,
     avg_resolution_hours,
+    csat_score,
     daily_buckets,
     department_load,
     detect_anomalies,
+    fcr_percent,
     sla_compliance,
     status_distribution,
 )
@@ -22,22 +24,23 @@ def tickets() -> pd.DataFrame:
          "created": datetime(2026, 5, 1, 9, 0), "closed": datetime(2026, 5, 1, 12, 0),
          "first_response_at": datetime(2026, 5, 1, 9, 30),
          "frt_minutes": 30.0, "resolution_minutes": 180.0,
-         "isoverdue": 0, "isanswered": 1},
+         "isoverdue": 0, "isanswered": 1, "reopened": None, "csat_score": 5},
         {"ticket_id": 2, "status_id": 2, "dept_id": 1, "staff_id": 10,
          "created": datetime(2026, 5, 1, 10, 0), "closed": None,
          "first_response_at": datetime(2026, 5, 1, 11, 0),
          "frt_minutes": 60.0, "resolution_minutes": None,
-         "isoverdue": 1, "isanswered": 1},
+         "isoverdue": 1, "isanswered": 1, "reopened": None, "csat_score": None},
         {"ticket_id": 3, "status_id": 1, "dept_id": 2, "staff_id": 20,
          "created": datetime(2026, 5, 1, 14, 0), "closed": datetime(2026, 5, 2, 14, 0),
          "first_response_at": None,
          "frt_minutes": None, "resolution_minutes": 1440.0,
-         "isoverdue": 0, "isanswered": 0},
+         "isoverdue": 0, "isanswered": 0,
+         "reopened": datetime(2026, 5, 2, 10, 0), "csat_score": 3},
         {"ticket_id": 4, "status_id": 1, "dept_id": 2, "staff_id": 0,
          "created": datetime(2026, 5, 2, 9, 0), "closed": None,
          "first_response_at": None,
          "frt_minutes": None, "resolution_minutes": None,
-         "isoverdue": 0, "isanswered": 0},
+         "isoverdue": 0, "isanswered": 0, "reopened": None, "csat_score": None},
     ])
 
 
@@ -128,6 +131,33 @@ def test_detect_anomalies_spike():
     })
     anomalies = detect_anomalies(hist, z_threshold=2.0)
     assert any(a["metric"] == "total_tickets" and a["z_score"] > 2 for a in anomalies)
+
+
+def test_fcr_percent_excludes_reopened(tickets):
+    # Из четырёх тикетов закрыты двое (1 и 3). #1 не переоткрывался → FCR.
+    # #3 переоткрывался → не FCR. Итого 1/2 = 50%.
+    assert fcr_percent(tickets) == 50.0
+
+
+def test_fcr_percent_no_closed_returns_none():
+    open_only = pd.DataFrame([
+        {"closed": None, "reopened": None},
+        {"closed": None, "reopened": None},
+    ])
+    assert fcr_percent(open_only) is None
+
+
+def test_csat_score_averages_present_scores(tickets):
+    # Только тикеты 1 и 3 имеют оценки (5 и 3) → среднее 4.0
+    assert csat_score(tickets) == 4.0
+
+
+def test_csat_score_no_data_returns_none():
+    no_csat = pd.DataFrame([
+        {"csat_score": None},
+        {"csat_score": None},
+    ])
+    assert csat_score(no_csat) is None
 
 
 def test_detect_anomalies_too_few_rows():

@@ -197,6 +197,8 @@ class Api {
                 $r['avg_mttr_hours'],
                 $r['sla_frt_percent'],
                 $r['sla_mttr_percent'],
+                $r['fcr_percent'] ?? null,
+                $r['csat_score']  ?? null,
             ];
         }
     }
@@ -287,7 +289,8 @@ class Api {
     private static function aggHeader(): array {
         return ['Дата', 'Всего', 'Открытых', 'Закрытых', 'Просроченных',
                 'Среднее FRT (мин)', 'Среднее MTTR (ч)',
-                'SLA по FRT (%)', 'SLA по MTTR (%)'];
+                'SLA по FRT (%)', 'SLA по MTTR (%)',
+                'FCR (%)', 'CSAT (1..5)'];
     }
 
     private static function ticketsHeader(): array {
@@ -312,6 +315,7 @@ class Api {
             '<tr>' .
                 '<th>Всего</th><th>Открытых</th><th>Закрытых</th><th>Просроченных</th>' .
                 '<th>FRT</th><th>MTTR</th><th>SLA FRT</th><th>SLA MTTR</th>' .
+                '<th>FCR</th><th>CSAT</th>' .
             '</tr><tr>' .
                 '<td>' . $fmtInt($summary['total_tickets']) . '</td>' .
                 '<td>' . $fmtInt($summary['opened_tickets']) . '</td>' .
@@ -321,12 +325,15 @@ class Api {
                 '<td>' . $fmtNum($summary['avg_mttr_hours'], ' ч') . '</td>' .
                 '<td>' . $fmtNum($summary['sla_frt_percent'], ' %') . '</td>' .
                 '<td>' . $fmtNum($summary['sla_mttr_percent'], ' %') . '</td>' .
+                '<td>' . $fmtNum($summary['fcr_percent'] ?? null, ' %') . '</td>' .
+                '<td>' . $fmtNum($summary['csat_score']  ?? null) . '</td>' .
             '</tr></table>';
 
         $tbl = '<table class="daily" cellspacing="0" cellpadding="4" width="100%">' .
             '<thead><tr>' .
             '<th>Дата</th><th>Всего</th><th>Откр.</th><th>Закр.</th><th>Просроч.</th>' .
             '<th>FRT мин</th><th>MTTR ч</th><th>SLA FRT</th><th>SLA MTTR</th>' .
+            '<th>FCR</th><th>CSAT</th>' .
             '</tr></thead><tbody>';
         foreach ($rows as $r) {
             $tbl .= '<tr>' .
@@ -339,6 +346,8 @@ class Api {
                 '<td>' . $fmtNum($r['avg_mttr_hours']) . '</td>' .
                 '<td>' . $fmtNum($r['sla_frt_percent']) . '</td>' .
                 '<td>' . $fmtNum($r['sla_mttr_percent']) . '</td>' .
+                '<td>' . $fmtNum($r['fcr_percent'] ?? null) . '</td>' .
+                '<td>' . $fmtNum($r['csat_score']  ?? null) . '</td>' .
                 '</tr>';
         }
         $tbl .= '</tbody></table>';
@@ -495,12 +504,15 @@ class Api {
             'avg_mttr_hours' => $r['avg_mttr_hours'] === null ? null : (float)$r['avg_mttr_hours'],
             'sla_frt_percent' => $r['sla_frt_percent'] === null ? null : (float)$r['sla_frt_percent'],
             'sla_mttr_percent' => $r['sla_mttr_percent'] === null ? null : (float)$r['sla_mttr_percent'],
+            'fcr_percent' => isset($r['fcr_percent']) && $r['fcr_percent'] !== null ? (float)$r['fcr_percent'] : null,
+            'csat_score'  => isset($r['csat_score'])  && $r['csat_score']  !== null ? (float)$r['csat_score']  : null,
         ], $rows);
     }
 
     private static function computeDelta(array $a, array $b): array {
         $metrics = ['total_tickets', 'opened_tickets', 'closed_tickets', 'overdue_tickets',
-                    'avg_frt_minutes', 'avg_mttr_hours', 'sla_frt_percent', 'sla_mttr_percent'];
+                    'avg_frt_minutes', 'avg_mttr_hours', 'sla_frt_percent', 'sla_mttr_percent',
+                    'fcr_percent', 'csat_score'];
         $delta = [];
         foreach ($metrics as $m) {
             $vA = $a[$m] ?? null;
