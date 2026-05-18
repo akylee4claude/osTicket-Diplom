@@ -28,6 +28,16 @@
 .ost-analytics__role--agent   { background: #e6f5ec; color: #1e7a3f; }
 .ost-analytics__role-meta { font-size: 11px; color: #6b7480; }
 
+.ost-analytics__scope-hint {
+    display: flex; align-items: center; gap: 8px;
+    margin: 0 0 14px; padding: 8px 12px; font-size: 12.5px;
+    border-radius: 6px; border-left: 3px solid;
+}
+.ost-analytics__scope-hint--admin   { background: #fef4f4; border-left-color: #c0392b; color: #7c2421; }
+.ost-analytics__scope-hint--manager { background: #fffaf0; border-left-color: #e67e22; color: #7c4912; }
+.ost-analytics__scope-hint--agent   { background: #f1faf3; border-left-color: #27ae60; color: #1c5e35; }
+.ost-analytics__scope-hint b { font-weight: 600; }
+
 .ost-analytics__filters {
     display: flex; flex-wrap: wrap; align-items: end; gap: 14px;
     background: linear-gradient(180deg,#fafbfc,#f3f5f7);
@@ -192,6 +202,12 @@ $roleLabels = [
     'agent'   => __('Агент'),
 ];
 $roleLabel = $roleLabels[$role ?? 'agent'] ?? __('Гость');
+$scopeHints = [
+    'admin'   => __('Видны метрики <b>по всем сотрудникам и отделам</b>. Доступен блок «Администрирование» (журнал событий, ручной триггер пересчёта).'),
+    'manager' => __('Видны метрики <b>по всем сотрудникам и отделам</b>. Доступна фильтрация по конкретному исполнителю или отделу.'),
+    'agent'   => __('Показаны только <b>ваши собственные тикеты</b>. Чтобы увидеть данные коллег или отдела целиком — обратитесь к руководителю.'),
+];
+$scopeHint = $scopeHints[$role ?? 'agent'] ?? '';
 ?>
 <div class="ost-analytics__head">
     <h2 class="ost-analytics__title">
@@ -212,7 +228,14 @@ $roleLabel = $roleLabels[$role ?? 'agent'] ?? __('Гость');
     </div>
 </div>
 
+<?php if (!empty($scopeHint)): ?>
+<div class="ost-analytics__scope-hint ost-analytics__scope-hint--<?= htmlspecialchars($role ?? 'agent', ENT_QUOTES, 'UTF-8') ?>">
+    <span><?= $scopeHint /* Безопасно: значения сформированы выше и не содержат пользовательского ввода */ ?></span>
+</div>
+<?php endif; ?>
+
 <div class="ost-analytics" data-api="<?= htmlspecialchars($apiBase) ?>"
+                            data-role="<?= htmlspecialchars($role ?? 'agent', ENT_QUOTES, 'UTF-8') ?>"
                             data-defaults='<?= htmlspecialchars(json_encode($defaults), ENT_QUOTES) ?>'>
     <form class="ost-analytics__filters" id="ost-analytics-filters" autocomplete="off">
         <label>
@@ -232,6 +255,7 @@ $roleLabel = $roleLabels[$role ?? 'agent'] ?? __('Гость');
             <?= __('По') ?>
             <input type="date" name="to">
         </label>
+<?php if (($role ?? 'agent') !== 'agent'): ?>
         <label>
             <?= __('Сотрудник') ?>
             <select name="staff_id" id="ost-analytics-staff">
@@ -250,6 +274,7 @@ $roleLabel = $roleLabels[$role ?? 'agent'] ?? __('Гость');
                 <?php endforeach; ?>
             </select>
         </label>
+<?php endif; ?>
         <label>
             <?= __('Сравнить с') ?>
             <select name="compare" id="ost-analytics-compare">
