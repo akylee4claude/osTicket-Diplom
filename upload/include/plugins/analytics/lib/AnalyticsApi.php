@@ -78,19 +78,44 @@ class Api {
         $role = $this->currentRole();
         if ($role === 'agent') {
             global $thisstaff;
+            $own = (int) $thisstaff->getId();
             return [
-                'staff_id' => (int) $thisstaff->getId(),
-                'dept_id'  => 0,
-                'locked'   => true,
-                'role'     => 'agent',
+                'staff_ids' => [$own],
+                'dept_id'   => 0,
+                'locked'    => true,
+                'role'      => 'agent',
             ];
         }
         return [
-            'staff_id' => isset($_GET['staff_id']) ? (int) $_GET['staff_id'] : 0,
-            'dept_id'  => isset($_GET['dept_id'])  ? (int) $_GET['dept_id']  : 0,
-            'locked'   => false,
-            'role'     => $role,
+            'staff_ids' => self::parseStaffIds($_GET),
+            'dept_id'   => isset($_GET['dept_id']) ? (int) $_GET['dept_id'] : 0,
+            'locked'    => false,
+            'role'      => $role,
         ];
+    }
+
+    /**
+     * Принимает либо массив `staff_ids[]=1&staff_ids[]=5`, либо CSV-форму
+     * `staff_ids=1,5,8`, либо одиночный `staff_id=N` (для обратной
+     * совместимости со старыми ссылками). Возвращает массив положительных
+     * целых; пустой массив — значит «фильтра нет».
+     */
+    private static function parseStaffIds(array $src): array {
+        $out = [];
+        if (isset($src['staff_ids'])) {
+            $raw = $src['staff_ids'];
+            if (is_array($raw)) {
+                foreach ($raw as $v) $out[] = (int) $v;
+            } else {
+                foreach (explode(',', (string) $raw) as $v) $out[] = (int) trim($v);
+            }
+        }
+        if (isset($src['staff_id'])) {
+            $out[] = (int) $src['staff_id'];
+        }
+        // Уникальные, только положительные.
+        $out = array_values(array_unique(array_filter($out, fn($v) => $v > 0)));
+        return $out;
     }
 
     /**
@@ -100,10 +125,10 @@ class Api {
      */
     private function rowsFor(\DateTimeInterface $from, \DateTimeInterface $to): array {
         $f = $this->effectiveFilter();
-        if ($f['staff_id'] > 0 || $f['dept_id'] > 0) {
+        if (!empty($f['staff_ids']) || $f['dept_id'] > 0) {
             [$slaFrt, $slaMttr] = $this->slaThresholds();
             return Repository::computeFiltered($from, $to,
-                $f['staff_id'] ?: null, $f['dept_id'] ?: null, $slaFrt, $slaMttr);
+                $f['staff_ids'] ?: null, $f['dept_id'] ?: null, $slaFrt, $slaMttr);
         }
         return Repository::dailyRange($from, $to);
     }
@@ -180,16 +205,13 @@ class Api {
         $metric = isset($_GET['metric']) ? (string) $_GET['metric'] : null;
         $f = $this->effectiveFilter();
 
-        if ($f['staff_id'] > 0 || $f['dept_id'] > 0) {
-            // Фильтр активен (агент или manager/admin с фильтром): бакет и
-            // 7-дневный контекст считаем на лету. Берём окно [date-7..date],
-            // последний день = $bucket, остальные — $context.
+        if (!empty($f['staff_ids']) || $f['dept_id'] > 0) {
             [$slaFrt, $slaMttr] = $this->slaThresholds();
             $tz = new \DateTimeZone(date_default_timezone_get());
             $target = new \DateTimeImmutable($date, $tz);
             $start  = $target->modify('-7 days');
             $rows = Repository::computeFiltered($start, $target,
-                $f['staff_id'] ?: null, $f['dept_id'] ?: null, $slaFrt, $slaMttr);
+                $f['staff_ids'] ?: null, $f['dept_id'] ?: null, $slaFrt, $slaMttr);
             $bucket = null; $context = [];
             foreach ($rows as $r) {
                 if ($r['bucket_date'] === $date) $bucket = $r;
@@ -202,7 +224,8 @@ class Api {
         }
 
         $tickets = Repository::ticketsForDay($date, 200,
-            $f['staff_id'] ?: null, $f['dept_id'] ?: null);
+            !empty($f['staff_ids']) ? $f['staff_ids'] : null,
+            $f['dept_id'] ?: null);
 
         return $this->json([
             'date' => $date,
@@ -277,12 +300,12 @@ class Api {
 
     private function ticketsRowsFor(\DateTimeInterface $from, \DateTimeInterface $to): \Generator {
         $f = $this->activeFilter();
-        $sid = $f['staff_id'] ?: null;
-        $did = $f['dept_id']  ?: null;
+        $sids = !empty($f['staff_ids']) ? $f['staff_ids'] : null;
+        $did  = $f['dept_id']  ?: null;
         $cur = $from instanceof \DateTimeImmutable ? $from : \DateTimeImmutable::createFromInterface($from);
         $stop = $to instanceof \DateTimeImmutable ? $to : \DateTimeImmutable::createFromInterface($to);
         while ($cur <= $stop) {
-            foreach (Repository::ticketsForDay($cur->format('Y-m-d'), 1000, $sid, $did) as $t) {
+            foreach (Repository::ticketsForDay($cur->format('Y-m-d'), 1000, $sids, $did) as $t) {
                 yield [
                     $t['number'],
                     $t['created'],
@@ -436,13 +459,21 @@ class Api {
 
         $generatedAt = (new \DateTimeImmutable('now'))->format('Y-m-d H:i');
         $filterLine = '';
-        if (!empty($filter['staff_id']) || !empty($filter['dept_id'])) {
+        $staffIds = $filter['staff_ids'] ?? [];
+        if (!empty($staffIds) || !empty($filter['dept_id'])) {
             $parts = [];
-            if (!empty($filter['staff_id'])) {
-                $row = \db_fetch_row(\db_query(
-                    "SELECT COALESCE(NULLIF(TRIM(CONCAT(firstname,' ',lastname)),''), username)
-                     FROM `" . TABLE_PREFIX . "staff` WHERE staff_id = " . (int) $filter['staff_id']));
-                $parts[] = 'Сотрудник: <b>' . $esc($row[0] ?? '#' . $filter['staff_id']) . '</b>';
+            if (!empty($staffIds)) {
+                $clean = array_values(array_filter(array_map('intval', $staffIds), fn($v) => $v > 0));
+                if ($clean) {
+                    $names = [];
+                    $list = implode(',', $clean);
+                    if ($res = \db_query("SELECT COALESCE(NULLIF(TRIM(CONCAT(firstname,' ',lastname)),''), username) AS n
+                                          FROM `" . TABLE_PREFIX . "staff` WHERE staff_id IN ($list)")) {
+                        while ($r = \db_fetch_row($res)) $names[] = $r[0];
+                    }
+                    $label = count($names) === 1 ? 'Сотрудник' : 'Сотрудники (' . count($names) . ')';
+                    $parts[] = $label . ': <b>' . $esc(implode(', ', $names)) . '</b>';
+                }
             }
             if (!empty($filter['dept_id'])) {
                 $row = \db_fetch_row(\db_query(

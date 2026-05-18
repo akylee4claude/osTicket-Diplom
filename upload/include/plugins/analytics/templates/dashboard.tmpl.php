@@ -53,6 +53,12 @@
 }
 .ost-analytics__filters select { padding-right: 24px; }
 .ost-analytics__filters .action-button { margin: 0; }
+.ost-analytics__staff-label { min-width: 240px; }
+.ost-analytics__staff-label .select2-container { min-width: 240px; }
+.ost-analytics__staff-label .select2-container .select2-selection { height: 32px; border-radius: 4px; }
+.ost-analytics__staff-label .select2-container .select2-selection__rendered { line-height: 30px; }
+/* Скрытие сотрудников «не из выбранного отдела» — управляется JS-классом */
+.ost-analytics__staff-label option.is-hidden { display: none; }
 
 .ost-analytics__kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 12px; margin-bottom: 20px; }
@@ -255,20 +261,22 @@ $scopeHint = ($role ?? 'agent') === 'agent'
         </label>
 <?php if (($role ?? 'agent') !== 'agent'): ?>
         <label>
-            <?= __('Сотрудник') ?>
-            <select name="staff_id" id="ost-analytics-staff">
-                <option value="0"><?= __('Все') ?></option>
-                <?php foreach (($staffList ?? []) as $st): ?>
-                    <option value="<?= (int) $st['id'] ?>"><?= htmlspecialchars($st['name'], ENT_QUOTES, 'UTF-8') ?></option>
-                <?php endforeach; ?>
-            </select>
-        </label>
-        <label>
             <?= __('Отдел') ?>
             <select name="dept_id" id="ost-analytics-dept">
                 <option value="0"><?= __('Все') ?></option>
                 <?php foreach (($deptList ?? []) as $dt): ?>
                     <option value="<?= (int) $dt['id'] ?>"><?= htmlspecialchars($dt['name'], ENT_QUOTES, 'UTF-8') ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <label class="ost-analytics__staff-label">
+            <?= __('Сотрудники') ?>
+            <select name="staff_ids[]" id="ost-analytics-staff" multiple
+                    data-placeholder="<?= __('Все') ?>">
+                <?php foreach (($staffList ?? []) as $st): ?>
+                    <option value="<?= (int) $st['id'] ?>" data-dept-id="<?= (int) $st['dept_id'] ?>">
+                        <?= htmlspecialchars($st['name'], ENT_QUOTES, 'UTF-8') ?>
+                    </option>
                 <?php endforeach; ?>
             </select>
         </label>
@@ -439,6 +447,43 @@ $scopeHint = ($role ?? 'agent') === 'agent'
   const exportKindSel = document.getElementById('ost-analytics-export-kind');
   const exportKindLabel = document.getElementById('ost-analytics-export-kind-label');
 
+  // ----- Select2 + связка «отдел → сотрудники» ------------------------------
+  // Select2 загружается osTicket'ом в footer.inc.php → на момент выполнения
+  // нашего IIFE он, как правило, уже доступен. Но возможен и обратный
+  // порядок, поэтому пробуем; при отсутствии — оставляем обычный
+  // <select multiple>.
+  const staffSel = document.getElementById('ost-analytics-staff');
+  const deptSel  = document.getElementById('ost-analytics-dept');
+  if (staffSel && window.jQuery && window.jQuery.fn.select2) {
+    try {
+      window.jQuery(staffSel).select2({
+        width: '240px',
+        placeholder: staffSel.dataset.placeholder || 'Все',
+        allowClear: true,
+      });
+    } catch (e) { console.warn('Select2 init failed, falling back', e); }
+  }
+  // При смене отдела прячем сотрудников не из него и снимаем выбор у
+  // скрытых, чтобы они не утекали в API-запрос.
+  function syncStaffByDept() {
+    if (!staffSel || !deptSel) return;
+    const dept = parseInt(deptSel.value || '0', 10);
+    const opts = staffSel.querySelectorAll('option');
+    let changed = false;
+    opts.forEach(opt => {
+      const own = parseInt(opt.dataset.deptId || '0', 10);
+      const hide = dept > 0 && own !== dept;
+      opt.classList.toggle('is-hidden', hide);
+      if (hide && opt.selected) { opt.selected = false; changed = true; }
+    });
+    if (changed && window.jQuery && window.jQuery.fn.select2) {
+      // Сообщаем Select2 что значения снаружи поменялись.
+      try { window.jQuery(staffSel).trigger('change.select2'); } catch (e) {}
+    }
+  }
+  if (deptSel) deptSel.addEventListener('change', syncStaffByDept);
+  syncStaffByDept();
+
   function updateExportLink() {
     const fmt = exportFormatSel.value;
     const params = currentParams();
@@ -475,10 +520,15 @@ $scopeHint = ($role ?? 'agent') === 'agent'
     else { params.set('days', days || defaults.default_period_days || 30); }
     // Фильтры по сотруднику/отделу — пишем в URL только при выборе конкретного,
     // чтобы запросы по «все/все» оставались чистыми (и кешировались proxy).
-    const staffId = parseInt(fd.get('staff_id') || '0', 10);
     const deptId  = parseInt(fd.get('dept_id')  || '0', 10);
-    if (staffId > 0) params.set('staff_id', String(staffId));
     if (deptId  > 0) params.set('dept_id',  String(deptId));
+    // staff_ids — массив (multi-select). FormData.getAll вернёт все
+    // выбранные значения. Передаём CSV-формой, она короче и проще читается
+    // в URL, чем staff_ids[]=...&staff_ids[]=...
+    const staffIds = fd.getAll('staff_ids[]')
+      .map(v => parseInt(v, 10))
+      .filter(v => v > 0);
+    if (staffIds.length > 0) params.set('staff_ids', staffIds.join(','));
     // Параметры периода Б — только в custom-режиме. В режиме "prev" backend
     // сам подберёт отрезок такой же длины перед A.
     if (compareSel.value === 'custom') {

@@ -10,12 +10,12 @@ namespace Analytics;
  */
 class Repository {
     /**
-     * Список штатных сотрудников для фильтра. Только активные, чтобы не
-     * захламлять выпадающий список уволенными.
+     * Список штатных сотрудников для фильтра. Возвращает также dept_id,
+     * чтобы фронт мог сужать выпадающий список при выборе отдела.
      */
     public static function allStaff(): array {
         $prefix = TABLE_PREFIX;
-        $sql = "SELECT staff_id,
+        $sql = "SELECT staff_id, dept_id,
                        COALESCE(NULLIF(TRIM(CONCAT(firstname, ' ', lastname)), ''), username) AS name
                 FROM `{$prefix}staff`
                 WHERE isactive = 1
@@ -23,7 +23,11 @@ class Repository {
         $rows = [];
         if ($res = \db_query($sql)) {
             while ($r = \db_fetch_array($res)) {
-                $rows[] = ['id' => (int) $r['staff_id'], 'name' => $r['name']];
+                $rows[] = [
+                    'id'      => (int) $r['staff_id'],
+                    'dept_id' => (int) $r['dept_id'],
+                    'name'    => $r['name'],
+                ];
             }
         }
         return $rows;
@@ -57,13 +61,19 @@ class Repository {
      * `summarise()` и фронт-рендеры работают без изменений.
      */
     public static function computeFiltered(\DateTimeInterface $from, \DateTimeInterface $to,
-                                            ?int $staffId, ?int $deptId,
+                                            ?array $staffIds, ?int $deptId,
                                             int $slaFrtMin = 60, int $slaMttrHours = 24): array {
         $prefix = TABLE_PREFIX;
         $dFrom = \db_input($from->format('Y-m-d 00:00:00'), false);
         $dTo   = \db_input($to->format('Y-m-d 23:59:59'), false);
         $where = ["t.created BETWEEN '$dFrom' AND '$dTo'"];
-        if ($staffId && $staffId > 0) $where[] = 't.staff_id = ' . (int) $staffId;
+        // Multi-select: staffIds — массив целых; пустой/null означает «без
+        // фильтра по сотрудникам». Каждый id уже привели к int — SQL-инъекций
+        // через IN(...) быть не может.
+        if ($staffIds) {
+            $clean = array_values(array_filter(array_map('intval', $staffIds), fn($v) => $v > 0));
+            if ($clean) $where[] = 't.staff_id IN (' . implode(',', $clean) . ')';
+        }
         if ($deptId && $deptId > 0)   $where[] = 't.dept_id = ' . (int) $deptId;
         $whereSql = implode(' AND ', $where);
 
@@ -348,12 +358,15 @@ class Repository {
      * объёмных днях верх таблицы определяется сортировкой ниже.
      */
     public static function ticketsForDay(string $date, int $limit = 200,
-                                         ?int $staffId = null, ?int $deptId = null): array {
+                                         ?array $staffIds = null, ?int $deptId = null): array {
         $prefix = TABLE_PREFIX;
         $tzDate = \db_input($date, false);
         $lim = (int) $limit;
         $extra = '';
-        if ($staffId && $staffId > 0) $extra .= ' AND t.staff_id = ' . (int) $staffId;
+        if ($staffIds) {
+            $clean = array_values(array_filter(array_map('intval', $staffIds), fn($v) => $v > 0));
+            if ($clean) $extra .= ' AND t.staff_id IN (' . implode(',', $clean) . ')';
+        }
         if ($deptId  && $deptId  > 0) $extra .= ' AND t.dept_id  = ' . (int) $deptId;
         $sql = "
             SELECT t.ticket_id, t.number, t.created, t.closed,
