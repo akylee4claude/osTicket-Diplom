@@ -53,11 +53,39 @@
 }
 .ost-analytics__filters select { padding-right: 24px; }
 .ost-analytics__filters .action-button { margin: 0; }
-.ost-analytics__staff-label { min-width: 240px; }
-.ost-analytics__staff-label .select2-container { min-width: 240px; }
-.ost-analytics__staff-label .select2-container .select2-selection { height: 32px; border-radius: 4px; }
-.ost-analytics__staff-label .select2-container .select2-selection__rendered { line-height: 30px; }
-/* Скрытие сотрудников «не из выбранного отдела» — управляется JS-классом */
+.ost-analytics__filters-break { flex-basis: 100%; height: 0; margin: 2px 0 0; }
+.ost-analytics__staff-label { min-width: 260px; }
+.ost-analytics__staff-label .select2-container { min-width: 260px; }
+.ost-analytics__staff-label .select2-container .select2-selection {
+    min-height: 32px;
+    height: auto;
+    border-radius: 4px;
+    border: 1px solid #ccd2d8;
+    padding-bottom: 2px;
+}
+.ost-analytics__staff-label .select2-container .select2-selection__rendered {
+    line-height: 28px;
+    padding: 0 6px;
+}
+.ost-analytics__staff-label .select2-selection__choice {
+    font-size: 11px !important;
+    padding: 0 6px !important;
+    margin: 3px 3px 0 0 !important;
+    background: #eef4ff !important;
+    border: 1px solid #c5d7f0 !important;
+    border-radius: 3px !important;
+    line-height: 20px !important;
+    height: 22px !important;
+}
+.ost-analytics__staff-label .select2-selection__choice__remove {
+    margin-right: 4px !important;
+    color: #6b7480 !important;
+}
+.ost-analytics__staff-label .select2-search--inline .select2-search__field {
+    margin-top: 3px !important;
+    height: 22px;
+    font-size: 12px;
+}
 .ost-analytics__staff-label option.is-hidden { display: none; }
 
 .ost-analytics__kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -298,6 +326,7 @@ $scopeHint = ($role ?? 'agent') === 'agent'
             <input type="date" name="to2">
         </label>
         <button type="submit" class="action-button"><?= __('Применить') ?></button>
+        <div class="ost-analytics__filters-break"></div>
         <label>
             <?= __('Формат') ?>
             <select id="ost-analytics-export-format">
