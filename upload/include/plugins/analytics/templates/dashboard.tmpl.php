@@ -33,8 +33,6 @@
     margin: 0 0 14px; padding: 8px 12px; font-size: 12.5px;
     border-radius: 6px; border-left: 3px solid;
 }
-.ost-analytics__scope-hint--admin   { background: #fef4f4; border-left-color: #c0392b; color: #7c2421; }
-.ost-analytics__scope-hint--manager { background: #fffaf0; border-left-color: #e67e22; color: #7c4912; }
 .ost-analytics__scope-hint--agent   { background: #f1faf3; border-left-color: #27ae60; color: #1c5e35; }
 .ost-analytics__scope-hint b { font-weight: 600; }
 
@@ -202,12 +200,12 @@ $roleLabels = [
     'agent'   => __('Агент'),
 ];
 $roleLabel = $roleLabels[$role ?? 'agent'] ?? __('Гость');
-$scopeHints = [
-    'admin'   => __('Видны метрики <b>по всем сотрудникам и отделам</b>. Доступен блок «Администрирование» (журнал событий, ручной триггер пересчёта).'),
-    'manager' => __('Видны метрики <b>по всем сотрудникам и отделам</b>. Доступна фильтрация по конкретному исполнителю или отделу.'),
-    'agent'   => __('Показаны только <b>ваши собственные тикеты</b>. Чтобы увидеть данные коллег или отдела целиком — обратитесь к руководителю.'),
-];
-$scopeHint = $scopeHints[$role ?? 'agent'] ?? '';
+// Подсказку про «видимый объём» показываем только агенту: ему важно
+// понимать, что данные ограничены своими тикетами. Admin/manager видят
+// всё по дефолту, и для них эта плашка была бы избыточным шумом.
+$scopeHint = ($role ?? 'agent') === 'agent'
+    ? __('Показаны только <b>ваши собственные тикеты</b>. Чтобы увидеть данные коллег или отдела целиком — обратитесь к руководителю.')
+    : '';
 ?>
 <div class="ost-analytics__head">
     <h2 class="ost-analytics__title">
