@@ -28,8 +28,8 @@ if ($cfg && $cfg->isKnowledgebaseEnabled()) { ?>
 <div class="search-form">
     <form method="get" action="kb/faq.php">
     <input type="hidden" name="a" value="search"/>
-    <input type="text" name="q" class="search" placeholder="<?php echo __('Search our knowledge base'); ?>"/>
-    <button type="submit" class="green button"><?php echo __('Search'); ?></button>
+    <input type="text" name="q" class="search" placeholder="Поиск по базе знаний"/>
+    <button type="submit" class="green button">Найти</button>
     </form>
 </div>
 <?php } ?>
@@ -38,7 +38,7 @@ if ($cfg && $cfg->isKnowledgebaseEnabled()) { ?>
     if($cfg && ($page = $cfg->getLandingPage()))
         echo $page->getBodyWithImages();
     else
-        echo  '<h1>'.__('Welcome to the Support Center').'</h1>';
+        echo  '<h1>Добро пожаловать в центр поддержки</h1>';
     ?>
     </div>
 </div>
@@ -53,7 +53,7 @@ if($cfg && $cfg->isKnowledgebaseEnabled()){
 <?php
 $cats = Category::getFeatured();
 if ($cats->all()) { ?>
-<h1><?php echo __('Featured Knowledge Base Articles'); ?></h1>
+<h1>Избранные статьи базы знаний</h1>
 <?php
 }
 

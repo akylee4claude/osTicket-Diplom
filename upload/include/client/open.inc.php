@@ -31,8 +31,8 @@ if ($info['topicId'] && ($topic=Topic::lookup($info['topicId']))) {
 }
 
 ?>
-<h1><?php echo __('Open a New Ticket');?></h1>
-<p><?php echo __('Please fill in the form below to open a new ticket.');?></p>
+<h1>Создать заявку</h1>
+<p>Заполните форму ниже, чтобы создать новую заявку.</p>
 <form id="ticketForm" method="post" action="open.php" enctype="multipart/form-data">
   <?php csrf_token(); ?>
   <input type="hidden" name="a" value="open">
@@ -46,16 +46,16 @@ if ($info['topicId'] && ($topic=Topic::lookup($info['topicId']))) {
         }
         else { ?>
             <tr><td colspan="2"><hr /></td></tr>
-        <tr><td><?php echo __('Email'); ?>:</td><td><?php
+        <tr><td>Электронная почта:</td><td><?php
             echo $thisclient->getEmail(); ?></td></tr>
-        <tr><td><?php echo __('Client'); ?>:</td><td><?php
+        <tr><td>Клиент:</td><td><?php
             echo Format::htmlchars($thisclient->getName()); ?></td></tr>
         <?php } ?>
     </tbody>
     <tbody>
     <tr><td colspan="2"><hr />
         <div class="form-header" style="margin-bottom:0.5em">
-        <b><?php echo __('Help Topic'); ?></b>
+        <b>Тема обращения</b>
         </div>
     </td></tr>
     <tr>
@@ -72,7 +72,7 @@ if ($info['topicId'] && ($topic=Topic::lookup($info['topicId']))) {
                           $(document.head).append(json.media);
                         }
                       });">
-                <option value="" selected="selected">&mdash; <?php echo __('Select a Help Topic');?> &mdash;</option>
+                <option value="" selected="selected">&mdash; Выберите тему обращения &mdash;</option>
                 <?php
                 if($topics=Topic::getPublicHelpTopics()) {
                     foreach($topics as $id =>$name) {
@@ -96,15 +96,15 @@ if ($info['topicId'] && ($topic=Topic::lookup($info['topicId']))) {
     <?php
     if($cfg && $cfg->isCaptchaEnabled() && (!$thisclient || !$thisclient->isValid())) {
         if($_POST && $errors && !$errors['captcha'])
-            $errors['captcha']=__('Please re-enter the text again');
+            $errors['captcha']='Пожалуйста, введите текст ещё раз';
         ?>
     <tr class="captchaRow">
-        <td class="required"><?php echo __('CAPTCHA Text');?>:</td>
+        <td class="required">Код с картинки:</td>
         <td>
             <span class="captcha"><img src="captcha.php" border="0" align="left"></span>
             &nbsp;&nbsp;
             <input id="captcha" type="text" name="captcha" size="6" autocomplete="off">
-            <em><?php echo __('Enter the text shown on the image.');?></em>
+            <em>Введите текст, показанный на изображении.</em>
             <font class="error">*&nbsp;<?php echo $errors['captcha']; ?></font>
         </td>
     </tr>
@@ -115,9 +115,9 @@ if ($info['topicId'] && ($topic=Topic::lookup($info['topicId']))) {
   </table>
 <hr/>
   <p class="buttons" style="text-align:center;">
-        <input type="submit" value="<?php echo __('Create Ticket');?>">
-        <input type="reset" name="reset" value="<?php echo __('Reset');?>">
-        <input type="button" name="cancel" value="<?php echo __('Cancel'); ?>" onclick="javascript:
+        <input type="submit" value="Создать заявку">
+        <input type="reset" name="reset" value="Очистить">
+        <input type="button" name="cancel" value="Отмена" onclick="javascript:
             $('.richtext').each(function() {
                 var redactor = $(this).data('redactor');
                 if (redactor && redactor.opts.draftDelete)

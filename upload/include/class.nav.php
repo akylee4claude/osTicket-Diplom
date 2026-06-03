@@ -328,9 +328,9 @@ class UserNav {
 
             $navs = array();
             $user = $this->user;
-            $navs['home']=array('desc'=>__('Support Center Home'),'href'=>'index.php','title'=>'');
+            $navs['home']=array('desc'=>'Главная','href'=>'index.php','title'=>'');
             if($cfg && $cfg->isKnowledgebaseEnabled())
-                $navs['kb']=array('desc'=>__('Knowledgebase'),'href'=>'kb/index.php','title'=>'');
+                $navs['kb']=array('desc'=>'База знаний','href'=>'kb/index.php','title'=>'');
 
             // Show the "Open New Ticket" link unless BOTH client
             // registration is disabled and client login is required for new
@@ -338,19 +338,19 @@ class UserNav {
             // possible for web clients.
             if ($cfg->getClientRegistrationMode() != 'disabled'
                     || !$cfg->isClientLoginRequired())
-                $navs['new']=array('desc'=>__('Open a New Ticket'),'href'=>'open.php','title'=>'');
+                $navs['new']=array('desc'=>'Создать заявку','href'=>'open.php','title'=>'');
             if($user && $user->isValid()) {
                 if(!$user->isGuest()) {
-                    $navs['tickets']=array('desc'=>sprintf(__('Tickets (%d)'),$user->getNumTickets($user->canSeeOrgTickets())),
+                    $navs['tickets']=array('desc'=>sprintf('Заявки (%d)',$user->getNumTickets($user->canSeeOrgTickets())),
                                            'href'=>'tickets.php',
-                                            'title'=>__('Show all tickets'));
+                                            'title'=>'Показать все заявки');
                 } else {
-                    $navs['tickets']=array('desc'=>__('View Ticket Thread'),
+                    $navs['tickets']=array('desc'=>'Просмотр переписки',
                                            'href'=>sprintf('tickets.php?id=%d',$user->getTicketId()),
-                                           'title'=>__('View ticket status'));
+                                           'title'=>'Просмотр статуса заявки');
                 }
             } else {
-                $navs['status']=array('desc'=>__('Check Ticket Status'),'href'=>'view.php','title'=>'');
+                $navs['status']=array('desc'=>'Проверить статус заявки','href'=>'view.php','title'=>'');
             }
             $this->navs=$navs;
         }
