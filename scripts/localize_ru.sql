@@ -1,11 +1,14 @@
 -- Перевод на русский язык контента клиентского портала, который хранится в БД
 -- (а не в PHP-файлах). Применить один раз на работающую установку osTicket:
---   docker compose exec db mysql -uosticket -posticket osticket < scripts/localize_ru.sql
+--
+--   docker compose cp scripts/localize_ru.sql db:/tmp/localize_ru.sql
+--   docker compose exec db sh -c "mysql -uosticket -posticket osticket < /tmp/localize_ru.sql"
 --
 -- Префикс таблиц по умолчанию ost_. При другом префиксе — заменить.
 
--- 1. Landing page (текст и заголовок на http://localhost:8080/)
-UPDATE ost_page
+-- 1. Landing page (текст и заголовок на http://localhost:8080/).
+--    В osTicket 1.18 хранится в ost_content (а не в ost_page).
+UPDATE ost_content
 SET body = CONCAT(
     '<h1>Добро пожаловать в центр поддержки</h1>',
     '<p>Чтобы упростить обработку обращений и повысить качество обслуживания, ',
@@ -15,7 +18,7 @@ SET body = CONCAT(
     'всех ваших обращений. Для подачи заявки требуется действующий адрес ',
     'электронной почты.</p>'
 )
-WHERE type = 'landing' OR name = 'Landing';
+WHERE type = 'landing';
 
 -- 2. Форма «Контактная информация» (показывается на /open.php неавторизованному пользователю)
 UPDATE ost_form
@@ -38,7 +41,11 @@ JOIN ost_form f ON f.id = ff.form_id AND f.type = 'U'
 SET ff.label = 'Номер телефона'
 WHERE ff.name = 'phone';
 
--- 4. Поля формы «Детали заявки» (Ticket Details) — отображаются после выбора темы
+-- 4. Форма «Детали заявки» и её поля — отображаются после выбора темы обращения
+UPDATE ost_form
+SET title = 'Детали заявки'
+WHERE type = 'T';
+
 UPDATE ost_form_field ff
 JOIN ost_form f ON f.id = ff.form_id AND f.type = 'T'
 SET ff.label = 'Тема заявки'
