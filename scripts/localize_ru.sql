@@ -2,9 +2,13 @@
 -- (а не в PHP-файлах). Применить один раз на работающую установку osTicket:
 --
 --   docker compose cp scripts/localize_ru.sql db:/tmp/localize_ru.sql
---   docker compose exec db sh -c "mysql -uosticket -posticket osticket < /tmp/localize_ru.sql"
+--   docker compose exec db sh -c "mysql --default-character-set=utf8mb4 -uosticket -posticket osticket < /tmp/localize_ru.sql"
 --
 -- Префикс таблиц по умолчанию ost_. При другом префиксе — заменить.
+
+-- Подключение клиента должно явно использовать utf8mb4, иначе кириллица
+-- запишется в БД как mojibake ("Ð"Ð¾Ð±Ñ€Ð¾..." вместо "Добро...").
+SET NAMES utf8mb4;
 
 -- 1. Landing page (текст и заголовок на http://localhost:8080/).
 --    В osTicket 1.18 хранится в ost_content (а не в ost_page).
