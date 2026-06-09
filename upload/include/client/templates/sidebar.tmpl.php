@@ -8,13 +8,11 @@ $BUTTONS = isset($BUTTONS) ? $BUTTONS : true;
 <?php
     if ($cfg->getClientRegistrationMode() != 'disabled'
         || !$cfg->isClientLoginRequired()) { ?>
-            <a href="open.php" style="display:block" class="blue button"><?php
-                echo __('Open a New Ticket');?></a>
+            <a href="open.php" style="display:block" class="blue button">Создать заявку</a>
 </p>
 <?php } ?>
 <p>
-            <a href="view.php" style="display:block" class="green button"><?php
-                echo __('Check Ticket Status');?></a>
+            <a href="view.php" style="display:block" class="green button">Проверить статус заявки</a>
 </p>
         </div>
 <?php } ?>
@@ -22,7 +20,7 @@ $BUTTONS = isset($BUTTONS) ? $BUTTONS : true;
     if ($cfg->isKnowledgebaseEnabled()
         && ($faqs = FAQ::getFeatured()->select_related('category')->limit(5))
         && $faqs->all()) { ?>
-            <section><div class="header"><?php echo __('Featured Questions'); ?></div>
+            <section><div class="header">Популярные вопросы</div>
 <?php   foreach ($faqs as $F) { ?>
             <div><a href="<?php echo ROOT_PATH; ?>kb/faq.php?id=<?php
                 echo urlencode($F->getId());
@@ -33,7 +31,7 @@ $BUTTONS = isset($BUTTONS) ? $BUTTONS : true;
     }
     $resources = Page::getActivePages()->filter(array('type'=>'other'));
     if ($resources->all()) { ?>
-            <section><div class="header"><?php echo __('Other Resources'); ?></div>
+            <section><div class="header">Прочие ресурсы</div>
 <?php   foreach ($resources as $page) { ?>
             <div><a href="<?php echo ROOT_PATH; ?>pages/<?php echo $page->getNameAsSlug();
             ?>"><?php echo $page->getLocalName(); ?></a></div>
