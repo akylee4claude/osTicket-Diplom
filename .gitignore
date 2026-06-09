@@ -16,6 +16,11 @@ Thumbs.db
 #       git update-index --skip-worktree upload/include/ost-config.php
 #   to let git ignore your local modifications.
 upload/setup/ost-config.sample.php.bak
+# Never commit credential backups, regardless of where they live
+*.local.backup
+*.local.bak*
+ost-config*.bak*
+ost-config*.backup*
 
 # Python
 __pycache__/
